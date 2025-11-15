@@ -1,8 +1,10 @@
 import Image from 'next/image';
+import { NavBar } from '@/components/nav-bar';
 
 export default async function Home() {
   return (
     <div className="flex flex-col items-center justify-start bg-zinc-50 font-sans dark:bg-black">
+      <NavBar />
       {/* Hero Image */}
       <div className="mt-8 flex justify-center w-full">
         <div className="relative w-full max-w-5xl aspect-video">
