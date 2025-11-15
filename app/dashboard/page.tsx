@@ -61,8 +61,8 @@ export default function Page() {
               We provide a unique opportunity for families of the Chinese
               Diaspora to preserve their immigrant experiences. This is a space
               where family members interview one another, ensuring that the
-              narrative of their family's journey remains authentic and firmly
-              in their hands. It's a place where families take control of their
+              narrative of their family&apos;s journey remains authentic and firmly
+              in their hands. It&apos;s a place where families take control of their
               own stories, creating a lasting legacy for future generations.
             </p>
 
