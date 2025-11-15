@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 
 export function NavBar() {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<{ username?: string; signInDetails?: { loginId?: string } } | null>(null);
   const [isClient, setIsClient] = useState(false);
   const router = useRouter();
 

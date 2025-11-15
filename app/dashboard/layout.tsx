@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { getCurrentUser } from 'aws-amplify/auth';
 
@@ -12,18 +12,18 @@ export default function DashboardLayout({
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    checkAuth();
-  }, []);
-
-  async function checkAuth() {
+  const checkAuth = useCallback(async () => {
     try {
       await getCurrentUser();
       setIsLoading(false);
-    } catch (error) {
+    } catch {
       router.push('/login');
     }
-  }
+  }, [router]);
+
+  useEffect(() => {
+    checkAuth();
+  }, [checkAuth]);
 
   if (isLoading) {
     return (

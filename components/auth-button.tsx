@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { signOut, getCurrentUser } from 'aws-amplify/auth';
-import { Authenticator, useAuthenticator } from '@aws-amplify/ui-react';
+import { Authenticator } from '@aws-amplify/ui-react';
 import { Button } from '@/components/ui/button';
 
 export function AuthButton() {
