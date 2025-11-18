@@ -85,7 +85,7 @@ export default function SignUpPage() {
         password,
       });
 
-      router.replace('/dashboard');
+      router.replace('/');
     } catch (err: any) {
       setError(err.message || 'Invalid confirmation code');
     } finally {
