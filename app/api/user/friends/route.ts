@@ -5,44 +5,48 @@ import { randomUUID } from 'crypto';
 
 export async function GET() {
   try {
-    const user = await getCurrentUser();
+    const currentUser = await getCurrentUser();
 
-    if (!user) {
+    if (!currentUser?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Map AWS user to Prisma user
+    const dbUser = await prisma.user.findUnique({
+      where: { user_id: currentUser.id },
+    });
+
+    if (!dbUser) {
+      return NextResponse.json(
+        { error: 'User not found in database' },
+        { status: 404 }
+      );
     }
 
     // Fetch all friendships where user is either initiator or receiver
     const friendships = await prisma.friendship.findMany({
       where: {
-        OR: [
-          { initiatorId: user.id },
-          { receiverId: user.id },
-        ],
-        status: {
-          not: 'REJECTED',
-        },
+        OR: [{ initiatorId: dbUser.id }, { receiverId: dbUser.id }],
       },
       include: {
-        User_Friendship_initiatorIdToUser: {
+        initiator: {
           select: {
             id: true,
             user_id: true,
-            username: true,
-            email_address: true,
             first_name: true,
             last_name: true,
-            name: true,
+            username: true,
+            email_address: true,
           },
         },
-        User_Friendship_receiverIdToUser: {
+        receiver: {
           select: {
             id: true,
             user_id: true,
-            username: true,
-            email_address: true,
             first_name: true,
             last_name: true,
-            name: true,
+            username: true,
+            email_address: true,
           },
         },
       },
@@ -50,27 +54,27 @@ export async function GET() {
 
     // Transform friendships to match frontend expectations
     const transformedFriendships = friendships.map((friendship) => {
-      const isInitiator = friendship.initiatorId === user.id;
+      const isInitiator = friendship.initiatorId === dbUser.id;
       const otherUser = isInitiator
-        ? friendship.User_Friendship_receiverIdToUser
-        : friendship.User_Friendship_initiatorIdToUser;
+        ? friendship.receiver
+        : friendship.initiator;
 
       // Determine the status from current user's perspective
       let status: 'ACCEPTED' | 'PENDING' | 'REQUESTED';
       if (friendship.status === 'ACCEPTED') {
         status = 'ACCEPTED';
       } else if (friendship.status === 'PENDING') {
-        // If current user is the initiator, they sent the request (PENDING)
-        // If current user is the receiver, they received the request (REQUESTED)
         status = isInitiator ? 'PENDING' : 'REQUESTED';
       } else {
-        status = 'PENDING'; // Fallback
+        status = 'PENDING'; // fallback
       }
 
-      const fullName = otherUser.name ||
-        [otherUser.first_name, otherUser.last_name].filter(Boolean).join(' ') ||
-        otherUser.username ||
-        otherUser.email_address;
+      const fullName =
+        otherUser.first_name || otherUser.last_name
+          ? [otherUser.first_name, otherUser.last_name]
+              .filter(Boolean)
+              .join(' ')
+          : otherUser.username || otherUser.email_address || 'Unknown';
 
       return {
         id: friendship.id,
@@ -93,49 +97,50 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const user = await getCurrentUser();
+    const currentUser = await getCurrentUser();
 
-    if (!user) {
+    if (!currentUser?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const dbUser = await prisma.user.findUnique({
+      where: { user_id: currentUser.id },
+    });
+
+    if (!dbUser) {
+      return NextResponse.json(
+        { error: 'User not found in database' },
+        { status: 404 }
+      );
     }
 
     const body = await request.json();
     const { email } = body;
 
     if (!email) {
-      return NextResponse.json(
-        { error: 'Email is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Email is required' }, { status: 400 });
     }
 
-    // Find the user by email
     const targetUser = await prisma.user.findFirst({
-      where: {
-        email_address: email,
-      },
+      where: { email_address: email },
     });
 
     if (!targetUser) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    if (targetUser.id === user.id) {
+    if (targetUser.id === dbUser.id) {
       return NextResponse.json(
         { error: 'Cannot send friend request to yourself' },
         { status: 400 }
       );
     }
 
-    // Check if friendship already exists
     const existingFriendship = await prisma.friendship.findFirst({
       where: {
         OR: [
-          { initiatorId: user.id, receiverId: targetUser.id },
-          { initiatorId: targetUser.id, receiverId: user.id },
+          { initiatorId: dbUser.id, receiverId: targetUser.id },
+          { initiatorId: targetUser.id, receiverId: dbUser.id },
         ],
       },
     });
@@ -147,11 +152,10 @@ export async function POST(request: Request) {
       );
     }
 
-    // Create friendship request
     const friendship = await prisma.friendship.create({
       data: {
         id: randomUUID(),
-        initiatorId: user.id,
+        initiatorId: dbUser.id,
         receiverId: targetUser.id,
         status: 'PENDING',
         createdAt: new Date(),
@@ -171,14 +175,24 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const user = await getCurrentUser();
+    const currentUser = await getCurrentUser();
 
-    if (!user) {
+    if (!currentUser?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const body = await request.json();
-    const { friendshipId } = body;
+    const dbUser = await prisma.user.findUnique({
+      where: { user_id: currentUser.id },
+    });
+
+    if (!dbUser) {
+      return NextResponse.json(
+        { error: 'User not found in database' },
+        { status: 404 }
+      );
+    }
+
+    const { friendshipId } = await request.json();
 
     if (!friendshipId) {
       return NextResponse.json(
@@ -198,8 +212,7 @@ export async function PATCH(request: Request) {
       );
     }
 
-    // Only the receiver can accept a friend request
-    if (friendship.receiverId !== user.id) {
+    if (friendship.receiverId !== dbUser.id) {
       return NextResponse.json(
         { error: 'Only the receiver can accept this request' },
         { status: 403 }
@@ -213,13 +226,9 @@ export async function PATCH(request: Request) {
       );
     }
 
-    // Update friendship to ACCEPTED
     await prisma.friendship.update({
       where: { id: friendshipId },
-      data: {
-        status: 'ACCEPTED',
-        updatedAt: new Date(),
-      },
+      data: { status: 'ACCEPTED', updatedAt: new Date() },
     });
 
     return NextResponse.json({ success: true });
@@ -234,14 +243,24 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const user = await getCurrentUser();
+    const currentUser = await getCurrentUser();
 
-    if (!user) {
+    if (!currentUser?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const body = await request.json();
-    const { friendshipId } = body;
+    const dbUser = await prisma.user.findUnique({
+      where: { user_id: currentUser.id },
+    });
+
+    if (!dbUser) {
+      return NextResponse.json(
+        { error: 'User not found in database' },
+        { status: 404 }
+      );
+    }
+
+    const { friendshipId } = await request.json();
 
     if (!friendshipId) {
       return NextResponse.json(
@@ -261,15 +280,14 @@ export async function DELETE(request: Request) {
       );
     }
 
-    // User must be either initiator or receiver
-    if (friendship.initiatorId !== user.id && friendship.receiverId !== user.id) {
+    if (
+      friendship.initiatorId !== dbUser.id &&
+      friendship.receiverId !== dbUser.id
+    ) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    // Delete the friendship
-    await prisma.friendship.delete({
-      where: { id: friendshipId },
-    });
+    await prisma.friendship.delete({ where: { id: friendshipId } });
 
     return NextResponse.json({ success: true });
   } catch (error) {

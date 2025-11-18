@@ -12,10 +12,7 @@ export async function GET(
     // Check authentication
     const user = await getCurrentUser();
     if (!user?.id) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const { taskId } = await params;
@@ -26,14 +23,21 @@ export async function GET(
     });
 
     if (!task) {
-      return NextResponse.json(
-        { error: 'Task not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Task not found' }, { status: 404 });
     }
 
     const payload = task.payload as Record<string, unknown>;
-    const userMediaId = payload.userMediaId;
+
+    // Ensure userMediaId is a string
+    const userMediaId =
+      typeof payload.userMediaId === 'string' ? payload.userMediaId : undefined;
+
+    if (!userMediaId) {
+      return NextResponse.json(
+        { error: 'Invalid userMediaId' },
+        { status: 400 }
+      );
+    }
 
     // Get UserMedia record
     const userMedia = await prisma.userMedia.findUnique({
@@ -47,18 +51,12 @@ export async function GET(
     });
 
     if (!userMedia) {
-      return NextResponse.json(
-        { error: 'Video not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Video not found' }, { status: 404 });
     }
 
     // Verify ownership
     if (userMedia.userId !== user.id) {
-      return NextResponse.json(
-        { error: 'Forbidden' },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     // Get current transcript if available
@@ -83,24 +81,24 @@ export async function GET(
         visibility: userMedia.visibility,
         approvalStatus: userMedia.approvalStatus,
       },
-      transcript: transcript ? {
-        id: transcript.id,
-        text: transcript.text,
-        summary: transcript.summary,
-        keywords: transcript.keywords,
-        status: transcript.status,
-        userApproved: transcript.userApproved,
-        speakerMappings: transcript.speakerMappings,
-        srtUrl: transcript.srtUrl,
-        vttUrl: transcript.vttUrl,
-      } : null,
+      transcript: transcript
+        ? {
+            id: transcript.id,
+            text: transcript.text,
+            summary: transcript.summary,
+            keywords: transcript.keywords,
+            status: transcript.status,
+            userApproved: transcript.userApproved,
+            speakerMappings: transcript.speakerMappings,
+            srtUrl: transcript.srtUrl,
+            vttUrl: transcript.vttUrl,
+          }
+        : null,
     });
   } catch (error) {
     console.error('Error fetching video status:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Failed to fetch status';
-    return NextResponse.json(
-      { error: errorMessage },
-      { status: 500 }
-    );
+    const errorMessage =
+      error instanceof Error ? error.message : 'Failed to fetch status';
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }

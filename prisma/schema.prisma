@@ -29,7 +29,7 @@ model Contact {
 }
 
 model FriendInvite {
-  id           String       @id
+  id           String       @id @default(uuid()) // generate id automatically
   inviterId    String
   inviteeEmail String
   inviteeName  String?
@@ -39,7 +39,7 @@ model FriendInvite {
   acceptedById String?
   expiresAt    DateTime
   createdAt    DateTime     @default(now())
-  updatedAt    DateTime
+  updatedAt    DateTime     @updatedAt // auto-updated
   inviter      User         @relation(fields: [inviterId], references: [user_id], onDelete: Cascade)
 
   @@index([inviteeEmail])
@@ -49,14 +49,15 @@ model FriendInvite {
 }
 
 model Friendship {
-  id          String           @id
+  id          String           @id @default(uuid()) // <-- generate id automatically
   initiatorId String
   receiverId  String
   status      FriendshipStatus @default(PENDING)
   createdAt   DateTime         @default(now())
-  updatedAt   DateTime
-  initiator   User             @relation("Friendship_initiatorIdToUser", fields: [initiatorId], references: [user_id], onDelete: Cascade)
-  receiver    User             @relation("Friendship_receiverIdToUser", fields: [receiverId], references: [user_id], onDelete: Cascade)
+  updatedAt   DateTime         @updatedAt // <-- auto-updated
+
+  initiator User @relation("Friendship_initiatorIdToUser", fields: [initiatorId], references: [user_id], onDelete: Cascade)
+  receiver  User @relation("Friendship_receiverIdToUser", fields: [receiverId], references: [user_id], onDelete: Cascade)
 
   @@unique([initiatorId, receiverId])
   @@index([initiatorId])
@@ -81,17 +82,21 @@ model Message {
 }
 
 model Notification {
-  id          String     @id
+  id          String   @id @default(uuid())
   userId      String
   userMediaId String?
   type        String
   title       String
   message     String
   link        String?
-  read        Boolean    @default(false)
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime
-  UserMedia   UserMedia? @relation(fields: [userMediaId], references: [id], onDelete: Cascade)
+  read        Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // relation to User
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // relation to UserMedia (optional)
+  userMedia UserMedia? @relation(fields: [userMediaId], references: [id], onDelete: Cascade)
 
   @@index([createdAt])
   @@index([userId, read])
@@ -174,47 +179,48 @@ model TyptoToken {
 }
 
 model User {
-  id                                      String         @id
-  user_id                                 String         @unique
-  username                                String?
-  email_address                           String?
-  protectedAreaPasswordHash               String?
-  role                                    UserRole       @default(USER)
-  status                                  String?
-  image_url                               String?
-  first_name                              String?
-  last_name                               String?
-  banned                                  Boolean?
-  last_sign_in_at                         DateTime?
-  object                                  String?
-  password_enabled                        Boolean?
-  primary_email_address_id                String?
-  primary_phone_number_id                 String?
-  profile_image_url                       String?
-  name                                    String?
-  two_factor_enabled                      Boolean?
-  isActive                                Boolean        @default(false)
-  createdAt                               DateTime       @default(now())
-  updatedAt                               DateTime?
-  unreadMessageCount                      Int?
-  currentAvatarId                         String?        @unique
-  birthDate                               DateTime?
-  gender                                  Gender?
-  walletPinHash                           String?
-  walletPinSetupAt                        DateTime?
-  encryptedMnemonic                       String?
-  walletAddress                           String?
-  Avatar_Avatar_user_idToUser    Avatar[]       @relation("Avatar_user_idToUser")
-  Contact                        Contact[]
-  FriendInvite                   FriendInvite[]
-  friendshipsAsInitiator         Friendship[]   @relation("Friendship_initiatorIdToUser")
-  friendshipsAsReceiver          Friendship[]   @relation("Friendship_receiverIdToUser")
-  Message_Message_recipientIdToUser       Message[]      @relation("Message_recipientIdToUser")
-  Message_Message_senderIdToUser          Message[]      @relation("Message_senderIdToUser")
-  Person                                  Person?
-  Session                                 Session[]
-  Avatar_User_currentAvatarIdToAvatar     Avatar?        @relation("User_currentAvatarIdToAvatar", fields: [currentAvatarId], references: [id])
-  UserMedia                               UserMedia[]
+  id                                  String         @id
+  user_id                             String         @unique
+  username                            String?
+  email_address                       String?
+  protectedAreaPasswordHash           String?
+  role                                UserRole       @default(USER)
+  status                              String?
+  image_url                           String?
+  first_name                          String?
+  last_name                           String?
+  banned                              Boolean?
+  last_sign_in_at                     DateTime?
+  object                              String?
+  password_enabled                    Boolean?
+  primary_email_address_id            String?
+  primary_phone_number_id             String?
+  profile_image_url                   String?
+  name                                String?
+  two_factor_enabled                  Boolean?
+  isActive                            Boolean        @default(false)
+  createdAt                           DateTime       @default(now())
+  updatedAt                           DateTime?
+  unreadMessageCount                  Int?
+  currentAvatarId                     String?        @unique
+  birthDate                           DateTime?
+  gender                              Gender?
+  walletPinHash                       String?
+  walletPinSetupAt                    DateTime?
+  encryptedMnemonic                   String?
+  walletAddress                       String?
+  Avatar_Avatar_user_idToUser         Avatar[]       @relation("Avatar_user_idToUser")
+  Contact                             Contact[]
+  FriendInvite                        FriendInvite[]
+  friendshipsAsInitiator              Friendship[]   @relation("Friendship_initiatorIdToUser")
+  friendshipsAsReceiver               Friendship[]   @relation("Friendship_receiverIdToUser")
+  Message_Message_recipientIdToUser   Message[]      @relation("Message_recipientIdToUser")
+  Message_Message_senderIdToUser      Message[]      @relation("Message_senderIdToUser")
+  Person                              Person?
+  Session                             Session[]
+  Avatar_User_currentAvatarIdToAvatar Avatar?        @relation("User_currentAvatarIdToAvatar", fields: [currentAvatarId], references: [id])
+  UserMedia                           UserMedia[]
+  notifications                       Notification[] // back-relation for Notification.user
 
   @@index([user_id])
 }
