@@ -1,0 +1,371 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Avatar {
+  id                                String   @id
+  user_id                           String
+  avatarImage_url                   String
+  createdAt                         DateTime @default(now())
+  updatedAt                         DateTime
+  User_Avatar_user_idToUser         User     @relation("Avatar_user_idToUser", fields: [user_id], references: [id], onDelete: Cascade)
+  User_User_currentAvatarIdToAvatar User?    @relation("User_currentAvatarIdToAvatar")
+}
+
+model Contact {
+  id        String   @id
+  name      String?
+  email     String?
+  comment   String?
+  user_id   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+  User      User?    @relation(fields: [user_id], references: [id])
+}
+
+model FriendInvite {
+  id           String       @id
+  inviterId    String
+  inviteeEmail String
+  inviteeName  String?
+  token        String       @unique
+  status       InviteStatus @default(PENDING)
+  message      String?
+  acceptedById String?
+  expiresAt    DateTime
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime
+  inviter      User         @relation(fields: [inviterId], references: [user_id], onDelete: Cascade)
+
+  @@index([inviteeEmail])
+  @@index([inviterId])
+  @@index([status])
+  @@index([token])
+}
+
+model Friendship {
+  id          String           @id
+  initiatorId String
+  receiverId  String
+  status      FriendshipStatus @default(PENDING)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime
+  initiator   User             @relation("Friendship_initiatorIdToUser", fields: [initiatorId], references: [user_id], onDelete: Cascade)
+  receiver    User             @relation("Friendship_receiverIdToUser", fields: [receiverId], references: [user_id], onDelete: Cascade)
+
+  @@unique([initiatorId, receiverId])
+  @@index([initiatorId])
+  @@index([receiverId])
+  @@index([status])
+}
+
+model Message {
+  id                             String   @id
+  content                        String
+  senderId                       String
+  recipientId                    String
+  fulfilled                      Boolean  @default(false)
+  messageRead                    Boolean  @default(false)
+  messageDeleted                 Boolean  @default(false)
+  createdAt                      DateTime @default(now())
+  User_Message_recipientIdToUser User     @relation("Message_recipientIdToUser", fields: [recipientId], references: [id], onDelete: Cascade)
+  User_Message_senderIdToUser    User     @relation("Message_senderIdToUser", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([recipientId])
+  @@index([senderId])
+}
+
+model Notification {
+  id          String     @id
+  userId      String
+  userMediaId String?
+  type        String
+  title       String
+  message     String
+  link        String?
+  read        Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime
+  UserMedia   UserMedia? @relation(fields: [userMediaId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([userId, read])
+}
+
+model Person {
+  id              String           @id
+  name            String
+  nameZh          String?
+  isFounder       Boolean          @default(false)
+  honorificPrefix String?
+  honorificSuffix String?
+  userId          String?          @unique
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime
+  User            User?            @relation(fields: [userId], references: [id])
+  PersonPosition  PersonPosition[]
+  UserMedia       UserMedia[]
+
+  @@unique([name, honorificPrefix])
+  @@index([name])
+}
+
+model PersonPosition {
+  id        String         @id
+  personId  String
+  category  PersonCategory @default(STAFF_AND_VOLUNTEERS)
+  title     String?
+  sortOrder Int            @default(999)
+  isEmeriti Boolean        @default(false)
+  years     String?
+  createdAt DateTime       @default(now())
+  updatedAt DateTime
+  imageUrl  String?
+  Person    Person         @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@unique([personId, category, isEmeriti])
+  @@index([category, isEmeriti, sortOrder])
+}
+
+model Session {
+  id           String   @id
+  sessionToken String   @unique
+  status       String?
+  user_id      String
+  expires      DateTime
+  User         User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+}
+
+model Show {
+  id        String   @id
+  name      String
+  slug      String   @unique
+  image     String
+  video     String
+  mp3       String
+  date      String
+  number    Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+}
+
+model Task {
+  id           String     @id
+  type         String
+  status       TaskStatus @default(PENDING)
+  payload      Json
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime
+  errorMessage String?
+}
+
+model TyptoToken {
+  id        String   @id
+  priceUsd  Float    @default(0.05)
+  updatedAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model User {
+  id                                      String         @id
+  user_id                                 String         @unique
+  username                                String?
+  email_address                           String?
+  protectedAreaPasswordHash               String?
+  role                                    UserRole       @default(USER)
+  status                                  String?
+  image_url                               String?
+  first_name                              String?
+  last_name                               String?
+  banned                                  Boolean?
+  last_sign_in_at                         DateTime?
+  object                                  String?
+  password_enabled                        Boolean?
+  primary_email_address_id                String?
+  primary_phone_number_id                 String?
+  profile_image_url                       String?
+  name                                    String?
+  two_factor_enabled                      Boolean?
+  isActive                                Boolean        @default(false)
+  createdAt                               DateTime       @default(now())
+  updatedAt                               DateTime?
+  unreadMessageCount                      Int?
+  currentAvatarId                         String?        @unique
+  birthDate                               DateTime?
+  gender                                  Gender?
+  walletPinHash                           String?
+  walletPinSetupAt                        DateTime?
+  encryptedMnemonic                       String?
+  walletAddress                           String?
+  Avatar_Avatar_user_idToUser    Avatar[]       @relation("Avatar_user_idToUser")
+  Contact                        Contact[]
+  FriendInvite                   FriendInvite[]
+  friendshipsAsInitiator         Friendship[]   @relation("Friendship_initiatorIdToUser")
+  friendshipsAsReceiver          Friendship[]   @relation("Friendship_receiverIdToUser")
+  Message_Message_recipientIdToUser       Message[]      @relation("Message_recipientIdToUser")
+  Message_Message_senderIdToUser          Message[]      @relation("Message_senderIdToUser")
+  Person                                  Person?
+  Session                                 Session[]
+  Avatar_User_currentAvatarIdToAvatar     Avatar?        @relation("User_currentAvatarIdToAvatar", fields: [currentAvatarId], references: [id])
+  UserMedia                               UserMedia[]
+
+  @@index([user_id])
+}
+
+model UserMedia {
+  id                  String                @id
+  userId              String
+  url                 String?
+  thumbnailUrl        String?
+  name                String?
+  description         String?
+  type                UserMediaType?        @default(USER_IMAGE)
+  visibility          MediaVisibility       @default(PRIVATE)
+  moderationStatus    ModerationStatus      @default(PENDING)
+  moderationNotes     String?
+  isPrimaryImage      Boolean               @default(false)
+  approvalStatus      ApprovalStatus        @default(DRAFT)
+  approvedByAdminId   String?
+  approvedAt          DateTime?
+  originalFilename    String?
+  fileSize            BigInt?
+  mimeType            String?
+  duration            Int?
+  width               Int?
+  height              Int?
+  posterUrl           String?
+  deletedAt           DateTime?
+  posterKey           String?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime
+  personId            String?
+  speakerMetadata     Json?
+  Notification        Notification[]
+  Person              Person?               @relation(fields: [personId], references: [id], onDelete: Cascade)
+  User                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  UserMediaTranscript UserMediaTranscript[]
+
+  @@index([approvalStatus])
+  @@index([createdAt])
+  @@index([moderationStatus])
+  @@index([userId])
+  @@index([visibility])
+}
+
+model UserMediaTranscript {
+  id                String           @id
+  userMediaId       String
+  text              String?
+  srtUrl            String?
+  vttUrl            String?
+  isCurrent         Boolean          @default(false)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime
+  status            String
+  error             String?
+  userApproved      Boolean          @default(false)
+  desiredVisibility MediaVisibility?
+  fileName          String?
+  speakerMappings   Json?
+  summary           String?
+  keywords          Json?
+  rawSegments       Json?
+  UserMedia         UserMedia        @relation(fields: [userMediaId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([userMediaId, isCurrent])
+}
+
+enum ApprovalStatus {
+  DRAFT
+  AWAITING_ADMIN
+  APPROVED
+  REJECTED
+}
+
+enum FriendshipStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  BLOCKED
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  RATHER_NOT_SAY
+}
+
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  CANCELLED
+}
+
+enum MediaAssetType {
+  THUMBNAIL_IMAGE
+  VIDEO_POSTER
+  VIDEO
+}
+
+enum MediaVisibility {
+  PRIVATE
+  FRIENDS
+  PUBLIC
+}
+
+enum ModerationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  REVIEW
+  PROCESSING
+}
+
+enum PersonCategory {
+  BOARD_OF_DIRECTORS
+  ADVISORY_BOARD
+  STAFF_AND_VOLUNTEERS
+}
+
+enum TaskStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum TranscriptProvider {
+  INTERNAL
+  WHISPER
+  ASSEMBLYAI
+  DEEPGRAM
+  OPENAI
+  OTHER
+}
+
+enum TranscriptStatus {
+  QUEUED
+  PROCESSING
+  FAILED
+  COMPLETED
+  REJECTED
+}
+
+enum UserMediaType {
+  USER_IMAGE
+  USER_VIDEO
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}

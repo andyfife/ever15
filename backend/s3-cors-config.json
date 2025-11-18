@@ -1,0 +1,28 @@
+{
+  "CORSRules": [
+    {
+      "AllowedOrigins": [
+        "http://localhost:3000",
+        "http://localhost:3003",
+        "https://*.amplifyapp.com"
+      ],
+      "AllowedMethods": [
+        "GET",
+        "PUT",
+        "POST",
+        "DELETE",
+        "HEAD"
+      ],
+      "AllowedHeaders": [
+        "*"
+      ],
+      "ExposeHeaders": [
+        "ETag",
+        "x-amz-server-side-encryption",
+        "x-amz-request-id",
+        "x-amz-id-2"
+      ],
+      "MaxAgeSeconds": 3000
+    }
+  ]
+}

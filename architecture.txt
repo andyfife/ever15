@@ -1,0 +1,950 @@
+# Video Transcription Architecture (Next.js + AWS Amplify + Open-Source AI)
+
+## System Overview
+
+A Next.js application deployed on AWS Amplify that processes user-uploaded videos through **open-source** moderation and creates diarized transcripts using **open-source** AI models (WhisperX and Llama) on on-demand GPU instances.
+
+## Open-Source Tools Used
+
+| Purpose | Tool | License | Why |
+|---------|------|---------|-----|
+| Content Moderation | NudeNet | MIT | Free, accurate NSFW detection |
+| Speech Recognition | WhisperX | BSD | Best-in-class transcription with diarization |
+| Summarization | Llama 3.2 | Llama 3 License | High-quality text generation |
+| Video Processing | FFmpeg | LGPL | Industry standard for media manipulation |
+| Computer Vision | OpenCV | Apache 2.0 | Frame extraction and analysis |
+| Deep Learning | PyTorch | BSD | GPU acceleration for all models |
+
+**AWS Services Used (Infrastructure only):**
+- S3 (Storage)
+- AWS Batch (Compute orchestration)
+- Lambda (Event triggers)
+- Amplify (Hosting)
+
+**Cost Savings: 99% vs AWS proprietary services** ($0.04 vs $7.54 per hour of video)
+
+## Architecture Components
+
+### 1. Frontend (Next.js on AWS Amplify)
+- **Deployment**: AWS Amplify Hosting
+- **Features**:
+  - Video upload interface
+  - Progress tracking
+  - Transcript display
+  - User authentication (Amplify Auth/Cognito)
+
+### 2. Video Upload Flow
+```
+User → Next.js App → S3 Pre-signed URL → S3 Bucket
+```
+
+**Implementation**:
+- Generate pre-signed URLs via API route
+- Upload directly to S3 from client
+- Trigger processing via S3 event
+
+### 3. Backend Processing Pipeline
+
+#### AWS Batch with Open-Source AI (RECOMMENDED)
+```
+S3 Upload → EventBridge → Lambda (Orchestrator) → AWS Batch (GPU) → Results to S3
+                                                        ↓
+                                    [Single GPU Job runs all three:]
+                                    1. NudeNet (moderation)
+                                    2. WhisperX (transcription)
+                                    3. Llama (summarization)
+```
+
+**Why AWS Batch:**
+- ✅ On-demand GPU instances (P3, P4, G4, G5 instances)
+- ✅ Automatic scaling (0 to N instances)
+- ✅ Cost-effective (pay only when processing)
+- ✅ Built-in job queuing and retry logic
+- ✅ Docker container support (perfect for open-source tools)
+- ✅ **All processing in one job = faster & cheaper**
+
+**Setup**:
+1. Create compute environment with GPU instances
+2. Define job queue
+3. Create job definition with Docker image (includes all 3 tools)
+4. Submit jobs via Lambda
+
+**Processing Time (1-hour video):**
+- Moderation: 2-3 minutes
+- Transcription: 3-6 minutes
+- Summarization: 1-2 minutes
+- **Total: ~8 minutes on g5.xlarge = $0.04**
+
+### 4. Moderation Check (Open-Source)
+
+**Using NudeNet + NSFW Detection** (runs on same GPU as WhisperX):
+```python
+# Integrated into the Batch job - no separate API needed!
+from nudenet import NudeDetector
+import cv2
+
+def moderate_video(video_path):
+    detector = NudeDetector()
+    
+    # Extract frames (1 per second for efficiency)
+    cap = cv2.VideoCapture(video_path)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    frame_interval = int(fps)  # Sample 1 frame per second
+    
+    frames_to_check = []
+    frame_count = 0
+    
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+        
+        if frame_count % frame_interval == 0:
+            frames_to_check.append(frame)
+        
+        frame_count += 1
+    
+    cap.release()
+    
+    # Batch detection
+    results = detector.detect_batch(frames_to_check)
+    
+    # Check for inappropriate content
+    for result in results:
+        for detection in result:
+            if detection['class'] in ['EXPOSED_GENITALIA', 'EXPOSED_BREAST']:
+                if detection['score'] > 0.8:
+                    return False, "Inappropriate content detected"
+    
+    return True, "Content approved"
+
+# Additional checks (violence, hate symbols, etc.)
+# You can add more open-source models here
+```
+
+**Cost: $0** (uses same GPU time as WhisperX)
+**Savings vs Rekognition: $6/video**
+
+## Detailed Implementation Guide
+
+### Step 1: S3 Buckets Setup
+```
+- video-uploads/         # Raw uploaded videos
+- video-processing/      # Temporary processing files
+- audio-extracted/       # Extracted audio files
+- transcripts/          # Final transcripts (JSON)
+- moderation-results/   # Moderation metadata
+```
+
+### Step 2: Next.js API Routes
+
+**`/api/upload-url`** - Generate pre-signed URL
+```typescript
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+
+export async function POST(req: Request) {
+  const { fileName, fileType } = await req.json();
+  
+  const s3Client = new S3Client({ region: process.env.AWS_REGION });
+  const key = `uploads/${Date.now()}-${fileName}`;
+  
+  const command = new PutObjectCommand({
+    Bucket: process.env.S3_BUCKET,
+    Key: key,
+    ContentType: fileType,
+  });
+  
+  const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+  
+  return Response.json({ uploadUrl, key });
+}
+```
+
+**`/api/start-processing`** - Trigger processing
+```typescript
+import { BatchClient, SubmitJobCommand } from "@aws-sdk/client-batch";
+
+export async function POST(req: Request) {
+  const { videoKey, userId } = await req.json();
+  
+  const batchClient = new BatchClient({ region: process.env.AWS_REGION });
+  
+  const command = new SubmitJobCommand({
+    jobName: `transcript-${Date.now()}`,
+    jobQueue: process.env.BATCH_JOB_QUEUE,
+    jobDefinition: process.env.BATCH_JOB_DEFINITION,
+    parameters: {
+      VIDEO_KEY: videoKey,
+      USER_ID: userId,
+      BUCKET: process.env.S3_BUCKET
+    }
+  });
+  
+  const response = await batchClient.send(command);
+  
+  return Response.json({ jobId: response.jobId });
+}
+```
+
+### Step 3: AWS Batch Job Definition
+
+**Dockerfile for WhisperX + Llama + Open-Source Moderation**:
+```dockerfile
+FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    python3.10 \
+    python3-pip \
+    ffmpeg \
+    git \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python packages
+RUN pip3 install --no-cache-dir \
+    whisperx \
+    torch \
+    torchaudio \
+    transformers \
+    accelerate \
+    bitsandbytes \
+    nudenet \
+    opencv-python-headless \
+    pillow
+
+# Install additional open-source moderation tools (optional)
+RUN pip3 install yahoo-open-nsfw-model  # Alternative NSFW detector
+
+# Hugging Face login (for Llama access)
+ARG HF_TOKEN
+RUN pip3 install huggingface_hub && \
+    python3 -c "from huggingface_hub import login; login('${HF_TOKEN}')"
+
+# Copy processing script
+COPY process_video.py /app/
+WORKDIR /app
+
+ENTRYPOINT ["python3", "process_video.py"]
+```
+
+**process_video.py** (Complete Open-Source Pipeline):
+```python
+import os
+import json
+import whisperx
+import torch
+import boto3
+import cv2
+from pathlib import Path
+from nudenet import NudeDetector
+from transformers import AutoTokenizer, AutoModelForCausalLM
+
+s3 = boto3.client('s3')
+
+def moderate_video(video_path):
+    """
+    Open-source content moderation using NudeNet
+    Extracts 1 frame per second and checks for inappropriate content
+    """
+    print("Starting content moderation...")
+    detector = NudeDetector()
+    
+    cap = cv2.VideoCapture(video_path)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    frame_interval = int(fps)
+    
+    frames_to_check = []
+    frame_count = 0
+    temp_frame_dir = "/tmp/frames"
+    os.makedirs(temp_frame_dir, exist_ok=True)
+    
+    while cap.isOpened() and len(frames_to_check) < 60:  # Check max 60 frames
+        ret, frame = cap.read()
+        if not ret:
+            break
+        
+        if frame_count % frame_interval == 0:
+            frame_path = f"{temp_frame_dir}/frame_{frame_count}.jpg"
+            cv2.imwrite(frame_path, frame)
+            frames_to_check.append(frame_path)
+        
+        frame_count += 1
+    
+    cap.release()
+    
+    # Batch detection
+    print(f"Checking {len(frames_to_check)} frames...")
+    inappropriate_count = 0
+    
+    for frame_path in frames_to_check:
+        detections = detector.detect(frame_path)
+        
+        for detection in detections:
+            # Check for explicit content
+            if detection['class'] in ['EXPOSED_GENITALIA', 'EXPOSED_BREAST', 'EXPOSED_BUTTOCKS']:
+                if detection['score'] > 0.75:
+                    inappropriate_count += 1
+                    print(f"⚠️ Inappropriate content detected: {detection['class']} ({detection['score']:.2f})")
+        
+        os.remove(frame_path)
+    
+    # Threshold: reject if more than 5% of frames are inappropriate
+    rejection_threshold = len(frames_to_check) * 0.05
+    
+    if inappropriate_count > rejection_threshold:
+        return False, f"Rejected: {inappropriate_count} inappropriate frames detected"
+    
+    print("✓ Content moderation passed")
+    return True, "Content approved"
+
+
+def transcribe_with_whisperx(audio_path):
+    """
+    Transcribe audio using WhisperX with diarization
+    """
+    print("Starting WhisperX transcription...")
+    
+    # Load model
+    device = "cuda"
+    compute_type = "float16"
+    model = whisperx.load_model("large-v2", device, compute_type=compute_type)
+    
+    # Load audio
+    audio = whisperx.load_audio(audio_path)
+    
+    # Transcribe
+    result = model.transcribe(audio, batch_size=16)
+    print(f"✓ Transcription complete. Language: {result['language']}")
+    
+    # Align timestamps
+    model_a, metadata = whisperx.load_align_model(
+        language_code=result["language"], 
+        device=device
+    )
+    result = whisperx.align(
+        result["segments"], 
+        model_a, 
+        metadata, 
+        audio, 
+        device
+    )
+    print("✓ Timestamp alignment complete")
+    
+    # Diarization (speaker identification)
+    hf_token = os.environ.get('HF_TOKEN')
+    if hf_token:
+        print("Starting speaker diarization...")
+        diarize_model = whisperx.DiarizationPipeline(
+            use_auth_token=hf_token,
+            device=device
+        )
+        diarize_segments = diarize_model(audio)
+        result = whisperx.assign_word_speakers(diarize_segments, result)
+        print("✓ Diarization complete")
+    else:
+        print("⚠️ No HF_TOKEN - skipping diarization")
+    
+    return result
+
+
+def summarize_with_llama(transcript_text):
+    """
+    Generate summary using Llama (open-source)
+    """
+    print("Starting Llama summarization...")
+    
+    # Load Llama model (using same GPU)
+    model_name = "meta-llama/Llama-3.2-3B-Instruct"
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        torch_dtype=torch.float16,
+        device_map="auto"
+    )
+    
+    # Create prompt
+    prompt = f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+
+You are a helpful assistant that creates concise summaries of transcripts.<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+Please summarize the following transcript in 2-3 clear paragraphs. Focus on the main topics, key points, and any important conclusions.
+
+Transcript:
+{transcript_text[:4000]}  # Limit to avoid token limits
+
+<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+"""
+    
+    # Generate summary
+    inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
+    outputs = model.generate(
+        **inputs,
+        max_new_tokens=500,
+        temperature=0.7,
+        do_sample=True,
+        pad_token_id=tokenizer.eos_token_id
+    )
+    
+    summary = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    # Extract just the assistant's response
+    summary = summary.split("<|start_header_id|>assistant<|end_header_id|>")[-1].strip()
+    
+    print("✓ Summary generated")
+    return summary
+
+
+def process_video(video_key, bucket_name):
+    """
+    Main processing pipeline - all open-source tools
+    """
+    print(f"Processing video: {video_key}")
+    
+    # Download video from S3
+    video_path = f"/tmp/{Path(video_key).name}"
+    print(f"Downloading from S3: {bucket_name}/{video_key}")
+    s3.download_file(bucket_name, video_key, video_path)
+    
+    # Step 1: Content Moderation (Open-Source)
+    is_appropriate, moderation_message = moderate_video(video_path)
+    
+    if not is_appropriate:
+        print(f"❌ {moderation_message}")
+        # Update status in DynamoDB or send notification
+        s3.put_object(
+            Bucket=bucket_name,
+            Key=video_key.replace('uploads/', 'rejected/'),
+            Body=json.dumps({
+                "status": "rejected",
+                "reason": moderation_message
+            })
+        )
+        return {"status": "rejected", "reason": moderation_message}
+    
+    # Step 2: Extract Audio
+    print("Extracting audio from video...")
+    audio_path = video_path.replace('.mp4', '.wav')
+    os.system(f'ffmpeg -i {video_path} -ar 16000 -ac 1 {audio_path} -y')
+    
+    # Step 3: Transcribe with WhisperX
+    transcript_result = transcribe_with_whisperx(audio_path)
+    
+    # Step 4: Generate Summary with Llama
+    transcript_text = " ".join([seg['text'] for seg in transcript_result['segments']])
+    summary = summarize_with_llama(transcript_text)
+    
+    # Step 5: Save Results to S3
+    output_data = {
+        "transcript": transcript_result,
+        "summary": summary,
+        "moderation": {
+            "status": "approved",
+            "message": moderation_message
+        },
+        "metadata": {
+            "language": transcript_result.get("language", "unknown"),
+            "num_segments": len(transcript_result['segments'])
+        }
+    }
+    
+    transcript_key = video_key.replace('uploads/', 'transcripts/').replace('.mp4', '.json')
+    print(f"Uploading results to S3: {transcript_key}")
+    s3.put_object(
+        Bucket=bucket_name,
+        Key=transcript_key,
+        Body=json.dumps(output_data, indent=2),
+        ContentType='application/json'
+    )
+    
+    # Cleanup
+    print("Cleaning up temporary files...")
+    os.remove(video_path)
+    os.remove(audio_path)
+    
+    print("✅ Processing complete!")
+    return {
+        "status": "success",
+        "transcript_key": transcript_key
+    }
+
+
+if __name__ == "__main__":
+    video_key = os.environ['VIDEO_KEY']
+    bucket = os.environ['BUCKET']
+    
+    try:
+        result = process_video(video_key, bucket)
+        print(json.dumps(result, indent=2))
+    except Exception as e:
+        print(f"❌ Error: {str(e)}")
+        raise
+```
+
+### Step 4: Lambda Orchestrator (Simplified)
+
+**Purpose**: Trigger AWS Batch job when video is uploaded
+
+```python
+import json
+import boto3
+import os
+
+batch = boto3.client('batch')
+dynamodb = boto3.resource('dynamodb')
+
+def lambda_handler(event, context):
+    """
+    Triggered by S3 upload event
+    Submits AWS Batch job to process video with open-source tools
+    """
+    # Get video details from S3 event
+    bucket = event['Records'][0]['s3']['bucket']['name']
+    key = event['Records'][0]['s3']['object']['key']
+    
+    # Generate job ID
+    job_id = key.split('/')[-1].replace('.mp4', '')
+    
+    # Store job metadata (optional - can use PostgreSQL or skip)
+    if os.environ.get('DYNAMODB_TABLE'):
+        table = dynamodb.Table(os.environ['DYNAMODB_TABLE'])
+        table.put_item(Item={
+            'jobId': job_id,
+            'videoKey': key,
+            'status': 'PROCESSING_STARTED',
+            'timestamp': event['Records'][0]['eventTime']
+        })
+    
+    # Submit AWS Batch job
+    # All processing (moderation + transcription + summary) happens in one job
+    batch_response = batch.submit_job(
+        jobName=f'process-{job_id}',
+        jobQueue=os.environ['BATCH_JOB_QUEUE'],
+        jobDefinition=os.environ['BATCH_JOB_DEFINITION'],
+        parameters={
+            'VIDEO_KEY': key,
+            'BUCKET': bucket
+        }
+    )
+    
+    print(f"✓ Batch job submitted: {batch_response['jobId']}")
+    
+    return {
+        'statusCode': 200,
+        'body': json.dumps({
+            'message': 'Processing started',
+            'batchJobId': batch_response['jobId']
+        })
+    }
+```
+
+**Note:** With open-source moderation, we don't need separate moderation/transcription handlers. Everything runs in one GPU job!
+
+## AWS Infrastructure Setup (Terraform/CloudFormation)
+
+### AWS Batch Resources
+
+```yaml
+# compute-environment.yaml (CloudFormation snippet)
+ComputeEnvironment:
+  Type: AWS::Batch::ComputeEnvironment
+  Properties:
+    Type: MANAGED
+    ComputeResources:
+      Type: SPOT  # Use SPOT for cost savings
+      AllocationStrategy: SPOT_CAPACITY_OPTIMIZED
+      MinvCpus: 0
+      MaxvCpus: 256
+      DesiredvCpus: 0
+      InstanceTypes:
+        - p3.2xlarge   # 1 GPU (V100)
+        - g4dn.xlarge  # 1 GPU (T4) - cheaper option
+        - g5.xlarge    # 1 GPU (A10G) - good balance
+      Subnets:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref BatchSecurityGroup
+      InstanceRole: !GetAtt BatchInstanceProfile.Arn
+
+JobQueue:
+  Type: AWS::Batch::JobQueue
+  Properties:
+    Priority: 1
+    ComputeEnvironmentOrder:
+      - Order: 1
+        ComputeEnvironment: !Ref ComputeEnvironment
+
+JobDefinition:
+  Type: AWS::Batch::JobDefinition
+  Properties:
+    Type: container
+    ContainerProperties:
+      Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/whisperx-processor:latest
+      Vcpus: 4
+      Memory: 16384
+      ResourceRequirements:
+        - Type: GPU
+          Value: "1"
+      JobRoleArn: !GetAtt BatchJobRole.Arn
+      Environment:
+        - Name: HF_TOKEN
+          Value: !Ref HuggingFaceToken
+```
+
+## Cost Optimization
+
+### Open-Source Architecture Savings
+
+**Per 1-hour video (with open-source tools):**
+
+| Component | AWS Proprietary | Open-Source | Savings |
+|-----------|----------------|-------------|---------|
+| Content Moderation | Rekognition: $6.00 | NudeNet (on GPU): $0.00 | **$6.00** |
+| Transcription | AWS Transcribe: $1.44 | WhisperX: Included in GPU | **$1.44** |
+| Summarization | Bedrock: $0.10 | Llama: Included in GPU | **$0.10** |
+| GPU Time | - | g5.xlarge: $0.04 | -$0.04 |
+| **Total** | **$7.54** | **$0.04** | **$7.50 (99% savings!)** |
+
+### GPU Instance Pricing (approximate, use SPOT for savings):
+- **g4dn.xlarge** (T4): ~$0.15/hr SPOT (~$0.50/hr on-demand)
+- **g5.xlarge** (A10G): ~$0.30/hr SPOT (~$1.00/hr on-demand)
+- **p3.2xlarge** (V100): ~$0.90/hr SPOT (~$3.00/hr on-demand)
+
+### Processing Time Estimates (1-hour video):
+- Video download: 30 seconds
+- Content moderation (NudeNet): 2-3 minutes
+- WhisperX transcription: 3-6 minutes (10-20x realtime)
+- Llama summarization: 1-2 minutes
+- **Total GPU time: ~8 minutes** = ~$0.04 on g5.xlarge SPOT
+
+### Monthly Cost Examples
+
+**Processing 100 videos/month (1 hour each):**
+- GPU processing: 100 × $0.04 = **$4**
+- Storage (S3 Standard): 200GB × $0.023 = **$4.60**
+- Lambda/API Gateway: **$2**
+- **Total: ~$11/month**
+
+**Processing 1,000 videos/month:**
+- GPU processing: **$40**
+- Storage: **$46**
+- Lambda/API: **$10**
+- **Total: ~$96/month**
+
+### Additional Open-Source Cost Optimizations:
+
+1. **Use SPOT instances** for 70% savings on GPU costs
+2. **S3 Lifecycle policies** to move old videos to Glacier (83% storage savings)
+3. **Compress videos** post-processing with FFmpeg (60% storage savings)
+4. **PostgreSQL on RDS** instead of DynamoDB (more predictable pricing)
+5. **Self-hosted PostgreSQL** on EC2 for even lower costs at scale
+
+## Monitoring & Status Updates
+
+### Database Options
+
+#### Option A: DynamoDB (Managed AWS)
+```javascript
+{
+  jobId: "uuid",
+  userId: "user-123",
+  videoKey: "uploads/video.mp4",
+  status: "TRANSCRIPTION_IN_PROGRESS",
+  moderationJobId: "rek-123",
+  batchJobId: "batch-456",
+  transcriptKey: "transcripts/video.json",
+  createdAt: "2024-01-01T00:00:00Z",
+  updatedAt: "2024-01-01T00:05:00Z"
+}
+```
+
+#### Option B: PostgreSQL on RDS (Open-Source Database)
+```sql
+CREATE TABLE video_processing_jobs (
+    job_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id VARCHAR(255) NOT NULL,
+    video_key TEXT NOT NULL,
+    status VARCHAR(50) NOT NULL,
+    moderation_result JSONB,
+    batch_job_id VARCHAR(255),
+    transcript_key TEXT,
+    error_message TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_user_jobs ON video_processing_jobs(user_id);
+CREATE INDEX idx_status ON video_processing_jobs(status);
+```
+
+**PostgreSQL Benefits:**
+- ✅ Open-source database
+- ✅ Familiar SQL
+- ✅ Better for complex queries
+- ✅ JSONB support for flexible data
+- ✅ Can self-host or use managed RDS
+
+#### Option C: Store in S3 Only (Simplest)
+```
+/jobs/
+  user-123/
+    job-uuid-1.json
+    job-uuid-2.json
+```
+
+**For small-scale:** Just use S3 metadata and JSON files
+**For production:** Use PostgreSQL or DynamoDB
+
+### DynamoDB Schema
+```javascript
+{
+  jobId: "uuid",
+  userId: "user-123",
+  videoKey: "uploads/video.mp4",
+  status: "TRANSCRIPTION_IN_PROGRESS",
+  moderationJobId: "rek-123",
+  batchJobId: "batch-456",
+  transcriptKey: "transcripts/video.json",
+  createdAt: "2024-01-01T00:00:00Z",
+  updatedAt: "2024-01-01T00:05:00Z"
+}
+```
+
+### Status Flow (Simplified with Open-Source)
+```
+UPLOADED → PROCESSING_STARTED → 
+[GPU Job: Moderation → Transcription → Summarization] →
+COMPLETED (or REJECTED if moderation fails)
+```
+
+**Benefits of single-job approach:**
+- ✅ Faster (no queue waits between steps)
+- ✅ Cheaper (one GPU session)
+- ✅ Simpler (fewer moving parts)
+- ✅ Atomic (all-or-nothing processing)
+
+### Real-time Updates (Next.js)
+Use polling or WebSockets:
+
+```typescript
+// Polling approach (simple)
+async function checkStatus(jobId: string) {
+  const response = await fetch(`/api/job-status/${jobId}`);
+  const { status, transcriptKey } = await response.json();
+  
+  if (status === 'COMPLETED') {
+    // Download and display transcript
+    const transcript = await fetch(`/api/transcript/${transcriptKey}`);
+    return transcript.json();
+  }
+  
+  // Continue polling
+  setTimeout(() => checkStatus(jobId), 5000);
+}
+```
+
+## Environment Variables (.env.local)
+
+```bash
+# AWS Configuration
+AWS_REGION=us-west-2
+AWS_ACCESS_KEY_ID=your-key
+AWS_SECRET_ACCESS_KEY=your-secret
+
+# S3
+S3_BUCKET=your-video-bucket
+
+# AWS Batch
+BATCH_JOB_QUEUE=video-processing-queue
+BATCH_JOB_DEFINITION=whisperx-llama-processor
+
+# Database (choose one or none)
+DYNAMODB_TABLE=VideoProcessingJobs  # Optional
+DATABASE_URL=postgresql://...       # Alternative: PostgreSQL
+
+# Hugging Face (for Llama and WhisperX diarization)
+HF_TOKEN=your-hf-token
+
+# Next.js
+NEXT_PUBLIC_API_URL=https://your-app.amplifyapp.com
+
+# Optional: Moderation settings
+MODERATION_THRESHOLD=0.75  # Confidence threshold for NudeNet
+MAX_FRAMES_TO_CHECK=60     # Limit frames checked per video
+```
+
+**Key differences from AWS-proprietary approach:**
+- ❌ Removed: SNS_TOPIC_ARN (no Rekognition)
+- ❌ Removed: REKOGNITION_ROLE_ARN
+- ✅ Added: HF_TOKEN (for open-source models)
+- ✅ Added: Moderation configuration options
+
+## Deployment Checklist
+
+### AWS Infrastructure
+- [ ] Set up S3 buckets with proper CORS and lifecycle policies
+- [ ] Create ECR repository for Docker images
+- [ ] Build and push Docker image with all open-source tools
+- [ ] Configure AWS Batch compute environment (GPU, SPOT instances)
+- [ ] Set up job queue and job definition
+- [ ] Create Lambda functions (orchestrator, status updater)
+- [ ] Set up EventBridge/S3 triggers
+- [ ] Choose database (DynamoDB, PostgreSQL RDS, or S3-only)
+- [ ] Set up IAM roles and policies
+- [ ] Configure Amplify environment variables
+
+### Open-Source Setup
+- [ ] Get Hugging Face token (for Llama and WhisperX diarization)
+- [ ] Test NudeNet moderation locally
+- [ ] Test WhisperX transcription locally
+- [ ] Test Llama summarization locally
+- [ ] Build Docker container with all dependencies
+- [ ] Verify GPU drivers in container
+
+### Testing & Optimization
+- [ ] Test with sample short video (1 minute)
+- [ ] Test with full-length video (1 hour)
+- [ ] Verify moderation rejects inappropriate content
+- [ ] Check transcript quality and diarization accuracy
+- [ ] Validate summary quality
+- [ ] Monitor GPU utilization and costs
+- [ ] Set up CloudWatch alarms
+- [ ] Configure S3 lifecycle policies for cost savings
+
+### Optional Enhancements
+- [ ] Add PostgreSQL for better querying
+- [ ] Implement WebSocket for real-time status updates
+- [ ] Add transcript editing interface
+- [ ] Export SRT/VTT subtitle files
+- [ ] Add multi-language support
+- [ ] Implement webhook notifications
+
+## Additional Open-Source Moderation Options
+
+### 1. NudeNet (RECOMMENDED - Currently Used)
+```python
+from nudenet import NudeDetector
+detector = NudeDetector()
+```
+- **Best for:** NSFW content detection
+- **Accuracy:** Very high
+- **Speed:** Fast (GPU accelerated)
+- **License:** MIT
+
+### 2. Yahoo Open NSFW Model
+```python
+from yahoo_open_nsfw import classify_image
+nsfw_score = classify_image('frame.jpg')
+```
+- **Best for:** Simple NSFW scoring
+- **Simpler:** Single score output
+- **Speed:** Very fast
+
+### 3. Detoxify (for text/audio toxicity)
+```python
+from detoxify import Detoxify
+model = Detoxify('original')
+results = model.predict(transcript_text)
+```
+- **Best for:** Detecting hate speech, toxicity in transcripts
+- **Use case:** Check transcript content for harmful language
+- **Complements:** Video moderation
+
+### 4. CLIP for Custom Moderation
+```python
+import clip
+model, preprocess = clip.load("ViT-B/32")
+# Create custom moderation rules
+```
+- **Best for:** Custom content policies
+- **Flexibility:** Define your own inappropriate content categories
+- **Advanced:** Requires more setup
+
+### 5. Combine Multiple Models
+```python
+def comprehensive_moderation(video_path, transcript):
+    # Visual moderation
+    nudenet_result = check_visual_content(video_path)
+    
+    # Text moderation
+    detoxify_result = check_text_toxicity(transcript)
+    
+    # Combined decision
+    return nudenet_result and detoxify_result
+```
+
+## Additional Features to Consider
+
+1. **Webhook notifications** when processing completes
+2. **SRT/VTT export** for video players
+3. **Transcript editing interface**
+4. **Multi-language support** (WhisperX supports this)
+5. **Cost dashboard** to track processing costs
+6. **Queue priority** for premium users
+7. **Batch upload** support
+
+## Testing Locally
+
+Use LocalStack or AWS SAM for local testing of Lambda functions and Batch jobs.
+
+---
+
+## Why This Open-Source Architecture?
+
+### Cost Comparison (1,000 hours of video/month)
+
+| Service | AWS Proprietary | Open-Source | Monthly Savings |
+|---------|----------------|-------------|-----------------|
+| Content Moderation | Rekognition: $6,000 | NudeNet: $0 | **$6,000** |
+| Transcription | AWS Transcribe: $1,440 | WhisperX: incl. | **$1,440** |
+| Summarization | Bedrock: $100 | Llama: incl. | **$100** |
+| GPU Processing | - | $40 | -$40 |
+| **Total** | **$7,540/mo** | **$40/mo** | **$7,500/mo (99%)** |
+
+### Technical Benefits
+
+**Performance:**
+- ⚡ **Faster**: Single GPU job vs. multiple API calls
+- 🎯 **Better accuracy**: WhisperX > AWS Transcribe for diarization
+- 🌍 **More languages**: WhisperX supports 90+ languages
+
+**Flexibility:**
+- 🔧 **Customizable**: Tune moderation thresholds
+- 📊 **Data privacy**: Your data never leaves your AWS account
+- 🚀 **Extensible**: Easy to add more models
+
+**Cost:**
+- 💰 **99% cheaper**: $0.04 vs $7.54 per video hour
+- 📉 **Predictable**: Fixed GPU costs, no API surprises
+- 🎁 **No vendor lock-in**: Can migrate to any cloud
+
+### Limitations
+
+**What you trade off:**
+- Need to manage Docker containers (one-time setup)
+- Slightly more complex initial setup
+- Need Hugging Face token for Llama access
+
+**But you gain:**
+- Complete control over your data
+- Massive cost savings
+- State-of-art open-source AI models
+- No API rate limits
+
+---
+
+## Next Steps
+
+1. **Start small**: Test with 1-minute videos locally
+2. **Set up AWS Batch**: Create compute environment with g4dn.xlarge
+3. **Build Docker image**: Include all open-source dependencies
+4. **Deploy to staging**: Test full pipeline with real videos
+5. **Monitor & optimize**: Track GPU utilization and costs
+6. **Scale up**: Add more compute capacity as needed
+
+**Estimated timeline:** 1-2 weeks for full setup and testing
+
+Good luck building! 🚀

@@ -1,0 +1,118 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "IAMPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole",
+        "iam:GetRole",
+        "iam:PutRolePolicy",
+        "iam:AttachRolePolicy",
+        "iam:PassRole",
+        "iam:CreateInstanceProfile",
+        "iam:GetInstanceProfile",
+        "iam:AddRoleToInstanceProfile",
+        "iam:ListRolePolicies",
+        "iam:ListAttachedRolePolicies"
+      ],
+      "Resource": [
+        "arn:aws:iam::786620399834:role/VideoBatchJobRole",
+        "arn:aws:iam::786620399834:role/VideoBatchExecutionRole",
+        "arn:aws:iam::786620399834:role/AWSBatchServiceRole",
+        "arn:aws:iam::786620399834:role/VideoBatchInstanceRole",
+        "arn:aws:iam::786620399834:instance-profile/VideoBatchInstanceProfile"
+      ]
+    },
+    {
+      "Sid": "BatchPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "batch:CreateComputeEnvironment",
+        "batch:CreateJobQueue",
+        "batch:RegisterJobDefinition",
+        "batch:DescribeComputeEnvironments",
+        "batch:DescribeJobQueues",
+        "batch:DescribeJobDefinitions",
+        "batch:SubmitJob",
+        "batch:ListJobs",
+        "batch:DescribeJobs",
+        "batch:UpdateComputeEnvironment",
+        "batch:UpdateJobQueue"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "EC2Permissions",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeVpcs",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeSecurityGroups",
+        "ec2:CreateSecurityGroup",
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:AuthorizeSecurityGroupEgress",
+        "ec2:DescribeImages",
+        "ec2:DescribeInstanceTypes"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "S3Permissions",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket",
+        "s3:ListAllMyBuckets",
+        "s3:GetBucketLocation",
+        "s3:GetBucketVersioning",
+        "s3:PutBucketVersioning",
+        "s3:GetBucketCors",
+        "s3:PutBucketCors",
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:HeadBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::ever15-videos-*",
+        "arn:aws:s3:::ever15-videos-*/*"
+      ]
+    },
+    {
+      "Sid": "CloudWatchLogsPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:DescribeLogGroups",
+        "logs:DescribeLogStreams",
+        "logs:GetLogEvents",
+        "logs:PutLogEvents",
+        "logs:FilterLogEvents"
+      ],
+      "Resource": [
+        "arn:aws:logs:us-west-1:786620399834:log-group:/aws/batch/*",
+        "arn:aws:logs:us-west-1:786620399834:log-group:/aws/batch/*:*"
+      ]
+    },
+    {
+      "Sid": "ECSPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "ecs:DescribeClusters",
+        "ecs:DescribeContainerInstances",
+        "ecs:DescribeTasks",
+        "ecs:ListClusters",
+        "ecs:ListContainerInstances"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "STSPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "sts:GetCallerIdentity"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

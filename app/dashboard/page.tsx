@@ -1,5 +1,9 @@
+'use client';
+
+import { useState } from 'react';
 import { AppSidebar } from '@/components/app-sidebar';
-import Image from 'next/image';
+import { FileUpload } from '@/components/file-upload';
+import { FileList } from '@/components/file-list';
 
 import {
   Breadcrumb,
@@ -17,6 +21,12 @@ import {
 } from '@/components/ui/sidebar';
 
 export default function Page() {
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  const handleUploadComplete = () => {
+    setRefreshTrigger((prev) => prev + 1);
+  };
+
   return (
     <SidebarProvider>
       <AppSidebar />
@@ -28,45 +38,30 @@ export default function Page() {
             <Breadcrumb>
               <BreadcrumbList>
                 <BreadcrumbItem className="hidden md:block">
-                  <BreadcrumbLink href="#">
-                    Building Your Application
-                  </BreadcrumbLink>
+                  <BreadcrumbLink href="#">Dashboard</BreadcrumbLink>
                 </BreadcrumbItem>
+
                 <BreadcrumbSeparator className="hidden md:block" />
                 <BreadcrumbItem>
-                  <BreadcrumbPage>Data Fetching</BreadcrumbPage>
+                  <BreadcrumbPage>My Files</BreadcrumbPage>
                 </BreadcrumbItem>
               </BreadcrumbList>
             </Breadcrumb>
           </div>
         </header>
-        <div className="flex flex-1 flex-col gap-4 p-4">
-          <div className="grid auto-rows-min gap-4 md:grid-cols-3"></div>
-          <div className="mt-8 flex justify-center w-full">
-            <div className="relative w-full max-w-5xl aspect-video">
-              <Image
-                src="/images/evergreen-home1.png"
-                alt="Evergreen Home"
-                fill
-                style={{ objectFit: 'cover' }}
-                className="rounded-xs"
-                priority
-              />
+        <div className="flex flex-1 flex-col gap-8 p-4 md:p-8">
+          <div className="max-w-5xl w-full mx-auto space-y-8">
+            <div>
+              <h1 className="text-3xl font-bold mb-2">File Management</h1>
+              <p className="text-muted-foreground">
+                Upload and manage your photos, videos, documents, and more.
+                Control who can access your files with visibility settings.
+              </p>
             </div>
-          </div>
 
-          {/* Text section */}
-          <div className="max-w-3xl mx-auto px-4 mt-8 text-left">
-            <p className="text-xl text-gray-600 leading-relaxed">
-              We provide a unique opportunity for families of the Chinese
-              Diaspora to preserve their immigrant experiences. This is a space
-              where family members interview one another, ensuring that the
-              narrative of their family&apos;s journey remains authentic and firmly
-              in their hands. It&apos;s a place where families take control of their
-              own stories, creating a lasting legacy for future generations.
-            </p>
+            <FileUpload onUploadComplete={handleUploadComplete} />
 
-            {/* Show Sign Up button only if user is signed out */}
+            <FileList refreshTrigger={refreshTrigger} />
           </div>
         </div>
       </SidebarInset>

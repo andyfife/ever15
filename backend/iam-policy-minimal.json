@@ -1,0 +1,31 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole",
+        "iam:GetRole",
+        "iam:PutRolePolicy",
+        "iam:AttachRolePolicy",
+        "iam:PassRole",
+        "iam:CreateInstanceProfile",
+        "iam:GetInstanceProfile",
+        "iam:AddRoleToInstanceProfile"
+      ],
+      "Resource": "arn:aws:iam::786620399834:*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "batch:*",
+        "ec2:Describe*",
+        "ec2:CreateSecurityGroup",
+        "ec2:AuthorizeSecurityGroupEgress",
+        "logs:*",
+        "s3:*"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

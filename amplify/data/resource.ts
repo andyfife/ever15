@@ -7,11 +7,19 @@ specifies that any user authenticated via an API key can "create", "read",
 "update", and "delete" any "Todo" records.
 =========================================================================*/
 const schema = a.schema({
-  Todo: a
+  // File metadata for S3 uploads - using Amplify for file storage
+  File: a
     .model({
-      content: a.string(),
+      name: a.string().required(),
+      key: a.string().required(), // S3 key/path
+      size: a.integer().required(), // File size in bytes
+      type: a.string().required(), // MIME type
+      visibility: a.enum(['PRIVATE', 'PUBLIC']),
+      uploadedAt: a.datetime(),
     })
-    .authorization((allow) => [allow.publicApiKey()]),
+    .authorization((allow) => [allow.owner()]),
+
+  // All other data models (User, Person, Friendship, etc.) are in Prisma
 });
 
 export type Schema = ClientSchema<typeof schema>;
@@ -19,10 +27,7 @@ export type Schema = ClientSchema<typeof schema>;
 export const data = defineData({
   schema,
   authorizationModes: {
-    defaultAuthorizationMode: "apiKey",
-    apiKeyAuthorizationMode: {
-      expiresInDays: 30,
-    },
+    defaultAuthorizationMode: "userPool",
   },
 });
 

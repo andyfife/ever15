@@ -1,208 +1,145 @@
-import * as React from "react"
-import { GalleryVerticalEnd } from "lucide-react"
+// components/AppSidebarClient.tsx
+'use client';
 
+import * as React from 'react';
+import {
+  Info,
+  Mail,
+  Mic,
+  Users,
+  Shield,
+  Heart,
+  Bell,
+  UserPlus,
+  Video,
+} from 'lucide-react';
 import {
   Sidebar,
   SidebarContent,
-  SidebarGroup,
   SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarMenuSub,
-  SidebarMenuSubButton,
-  SidebarMenuSubItem,
-  SidebarRail,
-} from "@/components/ui/sidebar"
+} from '@/components/ui/sidebar';
+import { NavMain } from '@/components/nav-main';
+import { NavProjects } from '@/components/nav-projects';
 
-// This is sample data.
-const data = {
-  navMain: [
-    {
-      title: "Getting Started",
-      url: "#",
-      items: [
-        {
-          title: "Installation",
-          url: "#",
-        },
-        {
-          title: "Project Structure",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Building Your Application",
-      url: "#",
-      items: [
-        {
-          title: "Routing",
-          url: "#",
-        },
-        {
-          title: "Data Fetching",
-          url: "#",
-          isActive: true,
-        },
-        {
-          title: "Rendering",
-          url: "#",
-        },
-        {
-          title: "Caching",
-          url: "#",
-        },
-        {
-          title: "Styling",
-          url: "#",
-        },
-        {
-          title: "Optimizing",
-          url: "#",
-        },
-        {
-          title: "Configuring",
-          url: "#",
-        },
-        {
-          title: "Testing",
-          url: "#",
-        },
-        {
-          title: "Authentication",
-          url: "#",
-        },
-        {
-          title: "Deploying",
-          url: "#",
-        },
-        {
-          title: "Upgrading",
-          url: "#",
-        },
-        {
-          title: "Examples",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "API Reference",
-      url: "#",
-      items: [
-        {
-          title: "Components",
-          url: "#",
-        },
-        {
-          title: "File Conventions",
-          url: "#",
-        },
-        {
-          title: "Functions",
-          url: "#",
-        },
-        {
-          title: "next.config.js Options",
-          url: "#",
-        },
-        {
-          title: "CLI",
-          url: "#",
-        },
-        {
-          title: "Edge Runtime",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Architecture",
-      url: "#",
-      items: [
-        {
-          title: "Accessibility",
-          url: "#",
-        },
-        {
-          title: "Fast Refresh",
-          url: "#",
-        },
-        {
-          title: "Next.js Compiler",
-          url: "#",
-        },
-        {
-          title: "Supported Browsers",
-          url: "#",
-        },
-        {
-          title: "Turbopack",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Community",
-      url: "#",
-      items: [
-        {
-          title: "Contribution Guide",
-          url: "#",
-        },
-      ],
-    },
-  ],
-}
+type AppSidebarProps = React.ComponentProps<typeof Sidebar> & {
+  isAdmin: boolean;
+  isSignedIn: boolean;
+  unreadCount: number;
+};
 
-export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+const baseNavMain = [
+  {
+    title: 'Who We Are',
+    url: '#',
+    icon: Users,
+    items: [
+      {
+        title: 'Our Vision and Mission',
+        url: '/about-us/our-vision-and-mission',
+      },
+      { title: 'Our Founders', url: '/about-us/our-founders' },
+      { title: 'Our Legacy', url: '/about-us/our-legacy' },
+      { title: 'Our Team', url: '/about-us/our-team' },
+      { title: 'Our Emeriti', url: '/about-us/our-emeriti' },
+    ],
+  },
+  {
+    title: 'What We Do',
+    url: '#',
+    icon: Info,
+    items: [
+      { title: 'Our Work Overview', url: '/our-work' },
+      { title: 'Family Story', url: '/our-work/family-story' },
+      { title: 'Household Library', url: '/our-work/household-library' },
+      { title: 'Early Childhood', url: '/our-work/early-childhood' },
+      {
+        title: 'Conferences and Workshops',
+        url: '/our-work/conferences-and-workshops',
+      },
+      {
+        title: 'Publications and Presentations',
+        url: '/our-work/publications-and-presentations',
+      },
+    ],
+  },
+  {
+    title: 'Oral History',
+    url: '#',
+    icon: Mic,
+    items: [
+      { title: 'How it Works', url: '/oral-history/how-it-works' },
+      { title: 'Get Started', url: '/oral-history/get-started' },
+      { title: 'Archived Stories', url: '/oral-history/archived-stories' },
+    ],
+  },
+] as const;
+
+const projects = [
+  { name: 'Contact Us', url: '/contact-us', icon: Mail },
+  {
+    name: 'Donate',
+    url: 'https://www.globalgiving.org/donate/33117/evergreen-education-foundation/',
+    icon: Heart,
+  },
+] as const;
+
+function AppSidebarInner({
+  isAdmin,
+  isSignedIn,
+  unreadCount,
+  ...props
+}: AppSidebarProps) {
+  // Keep references stable so children don't re-render needlessly.
+  const navMain = React.useMemo(() => {
+    const userItems = isSignedIn
+      ? [
+          {
+            title: 'My Account',
+            url: '#',
+            icon: Users,
+            items: [
+              {
+                title: 'Notifications',
+                url: '/user/notifications',
+                badge: unreadCount > 0 ? unreadCount.toString() : undefined,
+              },
+              { title: 'Friends', url: '/user/friends' },
+              { title: 'My Videos', url: '/user/videos' },
+              { title: 'Upload Videos', url: '/videos/upload' },
+            ],
+          },
+        ]
+      : [];
+
+    const adminItems = isAdmin
+      ? [
+          {
+            title: 'Admin',
+            url: '#',
+            icon: Shield,
+            items: [
+              { title: 'Video Monitoring', url: '/admin/videos' },
+              { title: 'Review Content', url: '/admin/review' },
+              { title: 'Contacts', url: '/admin/contacts' },
+            ],
+          },
+        ]
+      : [];
+
+    return [...baseNavMain, ...userItems, ...adminItems];
+  }, [isAdmin, isSignedIn, unreadCount]);
+
   return (
     <Sidebar {...props}>
-      <SidebarHeader>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild>
-              <a href="#">
-                <div className="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
-                  <GalleryVerticalEnd className="size-4" />
-                </div>
-                <div className="flex flex-col gap-0.5 leading-none">
-                  <span className="font-medium">Documentation</span>
-                  <span className="">v1.0.0</span>
-                </div>
-              </a>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarHeader>
+      <SidebarHeader />
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarMenu>
-            {data.navMain.map((item) => (
-              <SidebarMenuItem key={item.title}>
-                <SidebarMenuButton asChild>
-                  <a href={item.url} className="font-medium">
-                    {item.title}
-                  </a>
-                </SidebarMenuButton>
-                {item.items?.length ? (
-                  <SidebarMenuSub>
-                    {item.items.map((item) => (
-                      <SidebarMenuSubItem key={item.title}>
-                        <SidebarMenuSubButton asChild isActive={item.isActive}>
-                          <a href={item.url}>{item.title}</a>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                    ))}
-                  </SidebarMenuSub>
-                ) : null}
-              </SidebarMenuItem>
-            ))}
-          </SidebarMenu>
-        </SidebarGroup>
+        <NavMain items={navMain as any} />
+        <NavProjects projects={projects as any} />
       </SidebarContent>
-      <SidebarRail />
+
+      {/* 🔒 Memoized island — won’t re-render unless isSignedIn changes */}
     </Sidebar>
-  )
+  );
 }
+
+export const AppSidebar = React.memo(AppSidebarInner);
