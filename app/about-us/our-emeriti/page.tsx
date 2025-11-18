@@ -72,7 +72,7 @@ export default async function EmeritiPage() {
               and society. Their collective wisdom, expertise, and dedication
               have been instrumental in shaping the Evergreen Education
               Foundation’s success and continued impact.{' '}
-              <strong>We are deeply grateful for their service.</strong>
+              <strong>We are deeply grateful for all of their service.</strong>
             </p>
           </div>
         </header>
