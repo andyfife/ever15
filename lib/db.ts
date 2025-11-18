@@ -1,9 +1,15 @@
+// lib/db.ts  ← or lib/prisma.ts
 import { PrismaClient } from '@prisma/client';
 
-const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined;
-};
+declare global {
+  // This allows us to attach prisma to globalThis in development
+  // eslint-disable-next-line no-var
+  var prisma: PrismaClient | undefined;
+}
 
-export const prisma = globalForPrisma.prisma ?? new PrismaClient();
-console.log('stereo mcs');
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+// This is the correct pattern for Next.js App Router + serverless
+export const prisma = global.prisma || new PrismaClient();
+
+if (process.env.NODE_ENV !== 'production') {
+  global.prisma = prisma;
+}
