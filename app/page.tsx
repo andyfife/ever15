@@ -1,10 +1,8 @@
 import Image from 'next/image';
-import { NavBar } from '@/components/nav-bar';
 
 export default async function Home() {
   return (
     <div className="flex flex-col items-center justify-start bg-zinc-50 font-sans dark:bg-black">
-      <NavBar />
       {/* Hero Image */}
       <div className="mt-8 flex justify-center w-full">
         <div className="relative w-full max-w-5xl aspect-video">
@@ -25,9 +23,9 @@ export default async function Home() {
           We provide a unique opportunity for families of the Chinese Diaspora
           to preserve their immigrant experiences. This is a space where family
           members interview one another, ensuring that the narrative of their
-          family&apos;s journey remains authentic and firmly in their hands. It&apos;s a
-          place where families take control of their own stories, creating a
-          lasting legacy for future generations.
+          family&apos;s journey remains authentic and firmly in their hands.
+          It&apos;s a place where families take control of their own stories,
+          creating a lasting legacy for future generations.
         </p>
 
         {/* Show Sign Up button only if user is signed out */}

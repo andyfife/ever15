@@ -7,7 +7,10 @@ import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 
 export function NavBar() {
-  const [user, setUser] = useState<{ username?: string; signInDetails?: { loginId?: string } } | null>(null);
+  const [user, setUser] = useState<{
+    username?: string;
+    signInDetails?: { loginId?: string };
+  } | null>(null);
   const [isClient, setIsClient] = useState(false);
   const router = useRouter();
 
@@ -42,16 +45,22 @@ export function NavBar() {
   return (
     <nav className="w-full border-b bg-white">
       <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-        <Link href="/" className="text-xl font-bold">
-          Evergreen
-        </Link>
+        <div className="flex items-center justify-center h-16 px-4">
+          <img
+            src="/images/evergreen-logo.webp"
+            alt="Evergreen Education Foundation logo"
+            className="h-10 w-10 object-contain"
+          />
+          <Link href="/">
+            <span className="ml-3 text-lg font-semibold text-gray-800">
+              Evergreen Education Foundation
+            </span>
+          </Link>
+        </div>
 
         <div className="flex items-center gap-4">
           {user ? (
             <>
-              <Link href="/dashboard">
-                <Button variant="outline">Dashboard</Button>
-              </Link>
               <span className="text-sm text-gray-600">
                 {user.signInDetails?.loginId || user.username}
               </span>
