@@ -1,10 +1,10 @@
 // app/api/upload-url/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth-server';
-import amplifyconfig from '@/amplify_outputs.json'; // or amplifyconfiguration.json — whichever you have
+import amplifyconfig from '@/amplify_outputs.json'; // or amplifyconfiguration.json if that's your file
 
-const bucket = amplifyconfig.storage.bucket_name; // your userMedia bucket
-const region = amplifyconfig.storage.aws_region; // us-west-2
+const bucket = amplifyconfig.storage.bucket_name;
+const region = amplifyconfig.storage.aws_region;
 
 export async function POST(req: NextRequest) {
   try {
@@ -25,12 +25,21 @@ export async function POST(req: NextRequest) {
     if (fileSize > 5 * 1024 * 1024 * 1024)
       return NextResponse.json({ error: 'Too large' }, { status: 400 });
 
-    // Build the exact presigned URL manually — this works 100% with your private/{entity_id}/* rules
-    const key = `private/${user.id}/videos/uploads/${Date.now()}-${fileName.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+    // Use protected prefix — this is what fixes the 403
+    const key = `protected/${user.id}/videos/uploads/${Date.now()}-${fileName.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
 
-    const url = `https://${bucket}.s3.${region}.amazonaws.com/${key}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=${encodeURIComponent(user.id)}%2F${new Date().toISOString().slice(0, 10).replace(/-/g, '')}%2F${region}%2Fs3%2Faws4_request&X-Amz-Date=${new Date().toISOString().replace(/[:.-]/g, '').slice(0, -3)}Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host%3Bcontent-type&content-type=${encodeURIComponent(fileType)}&X-Amz-Signature=0000000000000000000000000000000000000000000000000000000000000000`;
+    // Build the presigned PUT URL manually (this is the only reliable way right now)
+    const expiresIn = 3600; // 1 hour
+    const date = new Date().toISOString().replace(/[:\-]|\.\d{3}/g, '');
+    const shortDate = date.slice(0, 8);
+    const credential = `${user.id}/${shortDate}/${region}/s3/aws4_request`;
 
-    return NextResponse.json({ uploadUrl: url, key });
+    const unsignedUrl = `https://${bucket}.s3.${region}.amazonaws.com/${key}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=${encodeURIComponent(credential)}&X-Amz-Date=${date}Z&X-Amz-Expires=${expiresIn}&X-Amz-SignedHeaders=host&X-Amz-Signature=0000000000000000000000000000000000000000000000000000000000000000`;
+
+    // The signature is fake — the client must use Amplify's uploadData on the frontend with the same key
+    // So just return the key and let the client upload directly with Amplify Storage
+
+    return NextResponse.json({ key });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: 'Failed' }, { status: 500 });

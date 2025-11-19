@@ -1,3 +1,4 @@
+// components/video-upload.tsx
 'use client';
 
 import { useState, useRef } from 'react';
@@ -12,6 +13,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
+import { uploadData } from 'aws-amplify/storage';
 
 interface VideoUploadProps {
   onUploadComplete?: (taskId: string, userMediaId: string) => void;
@@ -28,36 +30,28 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const selectedFile = e.target.files[0];
+    if (!e.target.files?.[0]) return;
 
-      // Validate file type
-      if (!selectedFile.type.startsWith('video/')) {
-        setError('Please select a video file');
-        return;
-      }
+    const selectedFile = e.target.files[0];
 
-      // Validate file size (max 5GB)
-      const maxSize = 5 * 1024 * 1024 * 1024; // 5GB
-      if (selectedFile.size > maxSize) {
-        setError('File size must be less than 5GB');
-        return;
-      }
-
-      setFile(selectedFile);
-      setError('');
-      setSuccess('');
-
-      // Create video preview
-      const url = URL.createObjectURL(selectedFile);
-      setVideoPreview(url);
+    if (!selectedFile.type.startsWith('video/')) {
+      setError('Please select a video file');
+      return;
     }
+
+    if (selectedFile.size > 5 * 1024 * 1024 * 1024) {
+      setError('File size must be less than 5GB');
+      return;
+    }
+
+    setFile(selectedFile);
+    setError('');
+    setSuccess('');
+    setVideoPreview(URL.createObjectURL(selectedFile));
   };
 
   const handleVideoLoaded = () => {
-    if (videoRef.current) {
-      setVideoDuration(videoRef.current.duration);
-    }
+    if (videoRef.current) setVideoDuration(videoRef.current.duration);
   };
 
   const formatDuration = (seconds: number) => {
@@ -68,44 +62,33 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
 
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
-    if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(2) + ' MB';
+    if (bytes < 1024 * 1024 * 1024)
+      return (bytes / 1024 / 1024).toFixed(2) + ' MB';
     return (bytes / 1024 / 1024 / 1024).toFixed(2) + ' GB';
   };
 
-  const generateThumbnail = (): Promise<string> => {
-    return new Promise((resolve) => {
-      if (!videoRef.current) {
-        resolve('');
-        return;
-      }
+  const generateThumbnail = async (): Promise<string> => {
+    if (!videoRef.current) return '';
 
-      const video = videoRef.current;
-      const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+    const video = videoRef.current;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return '';
 
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        canvas.toBlob((blob) => {
-          if (blob) {
-            const url = URL.createObjectURL(blob);
-            resolve(url);
-          } else {
-            resolve('');
-          }
-        }, 'image/jpeg', 0.8);
-      } else {
-        resolve('');
-      }
+    // Take thumbnail from 2 seconds in (or beginning)
+    video.currentTime = Math.min(2, video.duration);
+    await new Promise((resolve) => {
+      video.onseeked = resolve;
     });
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.8);
   };
 
   const handleUpload = async () => {
-    if (!file) {
-      setError('Please select a video file');
-      return;
-    }
+    if (!file) return;
 
     setUploading(true);
     setError('');
@@ -113,86 +96,59 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
     setUploadProgress(0);
 
     try {
-      // Step 1: Get pre-signed URL
-      setUploadProgress(10);
-      const urlResponse = await fetch('/api/video/upload-url', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fileName: file.name,
-          fileType: file.type,
-          fileSize: file.size,
-        }),
-      });
-
-      if (!urlResponse.ok) {
-        const errorData = await urlResponse.json();
-        throw new Error(errorData.error || 'Failed to get upload URL');
-      }
-
-      const { uploadUrl, key } = await urlResponse.json();
-
-      // Step 2: Upload to S3 using fetch
-      setUploadProgress(20);
-
-      const uploadResponse = await fetch(uploadUrl, {
-        method: 'PUT',
-        body: file,
-        headers: {
-          'Content-Type': file.type,
+      // 1. Upload directly with Amplify Storage (uses your private/{entity_id}/* rule perfectly)
+      const s3Result = await uploadData({
+        path: ({ identityId }) =>
+          `private/${identityId}/videos/${Date.now()}-${file.name}`,
+        data: file,
+        options: {
+          contentType: file.type,
+          onProgress: ({ transferredBytes, totalBytes }) => {
+            if (totalBytes) {
+              const percent = Math.round((transferredBytes / totalBytes) * 80); // 0-80%
+              setUploadProgress(percent + 10); // leave room for processing steps
+            }
+          },
         },
-      });
-
-      if (!uploadResponse.ok) {
-        const errorText = await uploadResponse.text();
-        throw new Error(`Upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`);
-      }
+      }).result;
 
       setUploadProgress(85);
 
-      // Step 3: Generate thumbnail
-      const thumbnailUrl = await generateThumbnail();
-
-      // Step 4: Start processing
+      // 2. Generate thumbnail
+      const thumbnailBase64 = await generateThumbnail();
       setUploadProgress(90);
+
+      // 3. Tell your backend to start processing
       const processingResponse = await fetch('/api/video/start-processing', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          videoKey: key,
+          videoKey: s3Result.path,
           fileName: file.name,
           fileSize: file.size,
           mimeType: file.type,
           duration: videoDuration,
-          thumbnailUrl,
+          thumbnailUrl: thumbnailBase64,
         }),
       });
 
-      if (!processingResponse.ok) {
-        const errorData = await processingResponse.json();
-        throw new Error(errorData.error || 'Failed to start processing');
-      }
+      if (!processingResponse.ok) throw new Error('Failed to start processing');
 
       const { taskId, userMediaId } = await processingResponse.json();
 
       setUploadProgress(100);
-      setSuccess('Video uploaded successfully! Processing started...');
+      setSuccess('Upload complete! Processing started...');
 
-      // Reset form
+      onUploadComplete?.(taskId, userMediaId);
+
+      // Reset
       setFile(null);
       setVideoPreview('');
       setVideoDuration(0);
-      const fileInput = document.getElementById('video-input') as HTMLInputElement;
-      if (fileInput) fileInput.value = '';
-
-      // Callback to parent component
-      if (onUploadComplete) {
-        onUploadComplete(taskId, userMediaId);
-      }
-    } catch (err) {
-      console.error('Upload error:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Failed to upload video';
-      setError(errorMessage);
+      setUploadProgress(0);
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Upload failed');
       setUploadProgress(0);
     } finally {
       setUploading(false);
@@ -204,8 +160,7 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       <CardHeader>
         <CardTitle>Upload Interview Video</CardTitle>
         <CardDescription>
-          Upload your interview video for automatic transcription and AI-powered summarization.
-          Maximum file size: 5GB.
+          Maximum file size: 5GB. Your video will be automatically processed.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -232,10 +187,16 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
             />
             {file && (
               <div className="text-sm text-muted-foreground space-y-1">
-                <p><strong>File:</strong> {file.name}</p>
-                <p><strong>Size:</strong> {formatFileSize(file.size)}</p>
+                <p>
+                  <strong>File:</strong> {file.name}
+                </p>
+                <p>
+                  <strong>Size:</strong> {formatFileSize(file.size)}
+                </p>
                 {videoDuration > 0 && (
-                  <p><strong>Duration:</strong> {formatDuration(videoDuration)}</p>
+                  <p>
+                    <strong>Duration:</strong> {formatDuration(videoDuration)}
+                  </p>
                 )}
               </div>
             )}
@@ -245,27 +206,21 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
         {uploading && (
           <div className="space-y-2">
             <Label>Upload Progress</Label>
-            <Progress value={uploadProgress} className="w-full" />
-            <p className="text-sm text-muted-foreground text-center">
-              {uploadProgress}% - {
-                uploadProgress < 20 ? 'Preparing...' :
-                uploadProgress < 85 ? 'Uploading...' :
-                uploadProgress < 95 ? 'Processing...' :
-                'Finalizing...'
-              }
+            <Progress value={uploadProgress} />
+            <p className="text-sm text-center text-muted-foreground">
+              {uploadProgress < 85 ? 'Uploading video...' : 'Finalizing...'}
             </p>
           </div>
         )}
 
         {error && (
-          <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-            <p className="text-sm text-red-600">{error}</p>
+          <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+            {error}
           </div>
         )}
-
         {success && (
-          <div className="p-3 bg-green-50 border border-green-200 rounded-md">
-            <p className="text-sm text-green-600">{success}</p>
+          <div className="p-4 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
+            {success}
           </div>
         )}
 
@@ -275,15 +230,8 @@ export function VideoUpload({ onUploadComplete }: VideoUploadProps) {
           className="w-full"
           size="lg"
         >
-          {uploading ? 'Uploading...' : 'Upload Video'}
+          {uploading ? 'Uploading... Please wait' : 'Upload Video'}
         </Button>
-
-        {!file && (
-          <p className="text-xs text-muted-foreground text-center">
-            Your video will be automatically processed: moderation → audio extraction →
-            transcription → AI summarization
-          </p>
-        )}
       </CardContent>
     </Card>
   );
