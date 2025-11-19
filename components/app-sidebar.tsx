@@ -99,6 +99,11 @@ function AppSidebarInner({
             icon: Users,
             items: [
               {
+                title: 'Profile Page',
+                url: '/user/profile',
+                badge: unreadCount > 0 ? unreadCount.toString() : undefined,
+              },
+              {
                 title: 'Notifications',
                 url: '/user/notifications',
                 badge: unreadCount > 0 ? unreadCount.toString() : undefined,

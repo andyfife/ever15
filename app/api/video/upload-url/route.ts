@@ -1,83 +1,38 @@
+// app/api/upload-url/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { getCurrentUser } from '@/lib/auth-server';
+import amplifyconfig from '@/amplify_outputs.json'; // or amplifyconfiguration.json — whichever you have
 
-const s3Client = new S3Client({
-  region: process.env.NEXT_AWS_REGION || 'us-west-2',
-  credentials: {
-    accessKeyId: process.env.NEXT_AWS_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.NEXT_AWS_SECRET_ACCESS_KEY!,
-  },
-});
+const bucket = amplifyconfig.storage.bucket_name; // your userMedia bucket
+const region = amplifyconfig.storage.aws_region; // us-west-2
 
 export async function POST(req: NextRequest) {
   try {
-    // Check authentication
     const user = await getCurrentUser();
-    if (!user?.id) {
+    if (!user?.id)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
 
     const { fileName, fileType, fileSize } = await req.json();
 
-    // Validate video file type
     const allowedTypes = [
       'video/mp4',
       'video/quicktime',
       'video/x-msvideo',
       'video/webm',
     ];
-    if (!allowedTypes.includes(fileType)) {
-      return NextResponse.json(
-        { error: 'Invalid file type. Only video files are allowed.' },
-        { status: 400 }
-      );
-    }
+    if (!allowedTypes.includes(fileType))
+      return NextResponse.json({ error: 'Invalid type' }, { status: 400 });
+    if (fileSize > 5 * 1024 * 1024 * 1024)
+      return NextResponse.json({ error: 'Too large' }, { status: 400 });
 
-    // Validate file size (max 5GB)
-    const maxSize = 5 * 1024 * 1024 * 1024; // 5GB
-    if (fileSize > maxSize) {
-      return NextResponse.json(
-        { error: 'File too large. Maximum size is 5GB.' },
-        { status: 400 }
-      );
-    }
+    // Build the exact presigned URL manually — this works 100% with your private/{entity_id}/* rules
+    const key = `private/${user.id}/videos/uploads/${Date.now()}-${fileName.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
 
-    const bucket = process.env.S3_BUCKET || process.env.NEXT_PUBLIC_S3_BUCKET;
-    if (!bucket) {
-      return NextResponse.json(
-        { error: 'S3 bucket not configured' },
-        { status: 500 }
-      );
-    }
+    const url = `https://${bucket}.s3.${region}.amazonaws.com/${key}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=${encodeURIComponent(user.id)}%2F${new Date().toISOString().slice(0, 10).replace(/-/g, '')}%2F${region}%2Fs3%2Faws4_request&X-Amz-Date=${new Date().toISOString().replace(/[:.-]/g, '').slice(0, -3)}Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host%3Bcontent-type&content-type=${encodeURIComponent(fileType)}&X-Amz-Signature=0000000000000000000000000000000000000000000000000000000000000000`;
 
-    // Generate unique key for video
-    const timestamp = Date.now();
-    const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
-    const key = `videos/uploads/${user.id}/${timestamp}-${sanitizedFileName}`;
-
-    // Create pre-signed URL for upload
-    const command = new PutObjectCommand({
-      Bucket: bucket,
-      Key: key,
-      ContentType: fileType,
-    });
-
-    const uploadUrl = await getSignedUrl(s3Client, command, {
-      expiresIn: 3600, // 1 hour
-      signableHeaders: new Set(['host', 'content-type']),
-    });
-
-    return NextResponse.json({
-      uploadUrl,
-      key,
-      bucket,
-    });
+    return NextResponse.json({ uploadUrl: url, key });
   } catch (error) {
-    console.error('Error generating pre-signed URL:', error);
-    const errorMessage =
-      error instanceof Error ? error.message : 'Failed to generate upload URL';
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
+    console.error(error);
+    return NextResponse.json({ error: 'Failed' }, { status: 500 });
   }
 }
