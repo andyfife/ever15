@@ -2,84 +2,79 @@ import { cookies } from 'next/headers';
 import { fetchAuthSession, fetchUserAttributes } from 'aws-amplify/auth/server';
 import { createServerRunner } from '@aws-amplify/adapter-nextjs';
 import config from '@/amplify_outputs.json';
-import { prisma } from '@/lib/db';
+import { User } from '@/lib/db';
 
 export const { runWithAmplifyServerContext } = createServerRunner({
   config,
 });
 
-export interface CurrentUser {
-  id: string;
-  email: string;
-  firstName?: string;
-  lastName?: string;
-  emailAddresses?: Array<{ emailAddress: string }>;
-}
+// Define your current user type
+export type CurrentUser = {
+  id: string; // Cognito Sub
+  firstName: string;
+  lastName: string;
+  username?: string;
+  currentAvatarId?: string;
+  email?: string;
+};
 
 /**
  * Get the current authenticated user from Amplify Auth
- * Similar to Clerk's currentUser() but for Amplify
- * Also ensures the user exists in the Prisma database
+ * Also ensures the user exists in DynamoDB (via ElectroDB)
  */
 export async function getCurrentUser(): Promise<CurrentUser | null> {
   try {
+    // Fetch Amplify session
     const session = await runWithAmplifyServerContext({
       nextServerContext: { cookies },
-      operation: (contextSpec) => fetchAuthSession(contextSpec),
+      operation: (ctx) => fetchAuthSession(ctx),
     });
 
-    if (!session.tokens) {
-      return null;
-    }
+    if (!session.tokens) return null;
 
+    // Fetch user attributes
     const userAttributes = await runWithAmplifyServerContext({
       nextServerContext: { cookies },
-      operation: (contextSpec) => fetchUserAttributes(contextSpec),
+      operation: (ctx) => fetchUserAttributes(ctx),
     });
 
-    // Extract user ID from the session (Cognito sub)
     const userId = session.tokens.idToken?.payload.sub as string;
+    if (!userId) return null;
 
-    if (!userId) {
-      return null;
-    }
-
-    // Map Amplify user attributes to match Clerk's structure
-    const user: CurrentUser = {
+    // Map attributes to CurrentUser
+    const currentUser: CurrentUser = {
       id: userId,
-      email: userAttributes.email || '',
-      firstName: userAttributes.given_name || userAttributes.name?.split(' ')[0],
-      lastName: userAttributes.family_name || userAttributes.name?.split(' ').slice(1).join(' '),
-      emailAddresses: userAttributes.email ? [{ emailAddress: userAttributes.email }] : [],
+      firstName:
+        userAttributes.given_name ||
+        userAttributes.name?.split(' ')[0] ||
+        'Unknown',
+      lastName:
+        userAttributes.family_name ||
+        userAttributes.name?.split(' ').slice(1).join(' ') ||
+        '',
+      username: userAttributes.nickname || userAttributes.email?.split('@')[0],
+      currentAvatarId: userAttributes.picture,
+      email: userAttributes.email,
     };
 
-    // Ensure user exists in Prisma database
-    try {
-      const existingUser = await prisma.user.findUnique({
-        where: { user_id: userId },
-      });
+    // Ensure user exists in DynamoDB
+    const existingUserResp = await User.get({ cognitoSub: userId }).go();
 
-      if (!existingUser) {
-        // Create user record in Prisma
-        await prisma.user.create({
-          data: {
-            id: userId,
-            user_id: userId,
-            email_address: user.email,
-            first_name: user.firstName,
-            last_name: user.lastName,
-            username: user.email.split('@')[0],
-          },
-        });
-      }
-    } catch (dbError) {
-      console.error('Error syncing user to database:', dbError);
-      // Don't fail auth if DB sync fails
+    if (!existingUserResp?.data) {
+      await User.put({
+        cognitoSub: userId,
+        email: currentUser.email || '',
+        username: currentUser.username || '',
+        firstName: currentUser.firstName, // ✅ updated from givenName
+        lastName: currentUser.lastName, // ✅ updated from familyName
+        currentAvatarId: currentUser.currentAvatarId,
+        createdAt: new Date().toISOString(),
+      }).go();
     }
 
-    return user;
-  } catch (error) {
-    console.error('Error fetching current user:', error);
+    return currentUser;
+  } catch (err) {
+    console.error('Error fetching current user:', err);
     return null;
   }
 }

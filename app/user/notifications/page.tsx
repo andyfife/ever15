@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
@@ -41,9 +41,9 @@ export default function NotificationsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ notificationId: id }),
       });
-      setNotifications(notifications.map(n =>
-        n.id === id ? { ...n, isRead: true } : n
-      ));
+      setNotifications(
+        notifications.map((n) => (n.id === id ? { ...n, isRead: true } : n))
+      );
     } catch (error) {
       console.error('Error marking notification as read:', error);
     }
@@ -56,7 +56,7 @@ export default function NotificationsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ markAllAsRead: true }),
       });
-      setNotifications(notifications.map(n => ({ ...n, isRead: true })));
+      setNotifications(notifications.map((n) => ({ ...n, isRead: true })));
     } catch (error) {
       console.error('Error marking all notifications as read:', error);
     }
@@ -71,16 +71,14 @@ export default function NotificationsPage() {
             Stay updated with your account activity
           </p>
         </div>
-        {notifications.some(n => !n.isRead) && (
+        {notifications.some((n) => !n.isRead) && (
           <Button onClick={markAllAsRead} variant="outline">
             Mark All as Read
           </Button>
         )}
       </div>
 
-      {loading && (
-        <div className="text-center py-8">Loading...</div>
-      )}
+      {loading && <div className="text-center py-8">Loading...</div>}
 
       {!loading && notifications.length === 0 && (
         <Card>
@@ -94,12 +92,17 @@ export default function NotificationsPage() {
       {!loading && notifications.length > 0 && (
         <div className="space-y-4">
           {notifications.map((notification) => (
-            <Card key={notification.id} className={!notification.isRead ? 'border-primary' : ''}>
+            <Card
+              key={notification.id}
+              className={!notification.isRead ? 'border-primary' : ''}
+            >
               <CardContent className="py-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-2">
-                      <Badge variant={notification.isRead ? 'outline' : 'default'}>
+                      <Badge
+                        variant={notification.isRead ? 'outline' : 'default'}
+                      >
                         {notification.type}
                       </Badge>
                       {!notification.isRead && (

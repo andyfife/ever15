@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
 import { getCurrentUser } from '@/lib/auth-server';
-
-const prisma = new PrismaClient();
+import { Task, Media, Transcript } from '@/lib/db';
 
 export async function GET(
   req: NextRequest,
@@ -18,9 +16,8 @@ export async function GET(
     const { taskId } = await params;
 
     // Get task
-    const task = await prisma.task.findUnique({
-      where: { id: taskId },
-    });
+    const taskResp = await Task.get({ taskId }).go();
+    const task = taskResp?.data;
 
     if (!task) {
       return NextResponse.json({ error: 'Task not found' }, { status: 404 });
@@ -28,62 +25,56 @@ export async function GET(
 
     const payload = task.payload as Record<string, unknown>;
 
-    // Ensure userMediaId is a string
-    const userMediaId =
-      typeof payload.userMediaId === 'string' ? payload.userMediaId : undefined;
+    // Ensure mediaId is a string
+    const mediaId =
+      typeof payload.mediaId === 'string' ? payload.mediaId : undefined;
 
-    if (!userMediaId) {
-      return NextResponse.json(
-        { error: 'Invalid userMediaId' },
-        { status: 400 }
-      );
+    if (!mediaId) {
+      return NextResponse.json({ error: 'Invalid mediaId' }, { status: 400 });
     }
 
-    // Get UserMedia record
-    const userMedia = await prisma.userMedia.findUnique({
-      where: { id: userMediaId },
-      include: {
-        UserMediaTranscript: {
-          where: { isCurrent: true },
-          take: 1,
-        },
-      },
-    });
+    // Get Media record
+    const mediaResp = await Media.query.byMediaId({ mediaId }).go();
+    const media = mediaResp?.data?.[0];
 
-    if (!userMedia) {
+    if (!media) {
       return NextResponse.json({ error: 'Video not found' }, { status: 404 });
     }
 
     // Verify ownership
-    if (userMedia.userId !== user.id) {
+    if (media.userId !== user.id) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     // Get current transcript if available
-    const transcript = userMedia.UserMediaTranscript[0] || null;
+    const transcriptResp = await Transcript.query
+      .byMedia({ mediaId })
+      .where(({ isCurrent }, { eq }) => eq(isCurrent, true))
+      .go();
+
+    const transcript = transcriptResp?.data?.[0] || null;
 
     return NextResponse.json({
       task: {
-        id: task.id,
+        id: task.taskId,
         status: task.status,
         errorMessage: task.errorMessage,
         currentStep: payload.currentStep,
         steps: payload.steps,
       },
       video: {
-        id: userMedia.id,
-        name: userMedia.name,
-        url: userMedia.url,
-        thumbnailUrl: userMedia.thumbnailUrl,
-        duration: userMedia.duration,
-        moderationStatus: userMedia.moderationStatus,
-        moderationNotes: userMedia.moderationNotes,
-        visibility: userMedia.visibility,
-        approvalStatus: userMedia.approvalStatus,
+        id: media.mediaId,
+        name: media.name,
+        url: media.url,
+        thumbnailUrl: media.thumbnailUrl,
+        duration: media.duration,
+        moderationStatus: media.moderationStatus,
+        visibility: media.visibility,
+        approvalStatus: media.approvalStatus,
       },
       transcript: transcript
         ? {
-            id: transcript.id,
+            id: transcript.transcriptId,
             text: transcript.text,
             summary: transcript.summary,
             keywords: transcript.keywords,

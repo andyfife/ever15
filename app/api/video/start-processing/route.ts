@@ -1,11 +1,10 @@
 // app/api/video/start-processing/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
 import { getCurrentUser } from '@/lib/auth-server';
+import { Task } from '@/lib/db';
 import { BatchClient, SubmitJobCommand } from '@aws-sdk/client-batch';
 import amplifyconfig from '@/amplify_outputs.json';
-
-const prisma = new PrismaClient();
+import { randomUUID } from 'crypto';
 
 const bucket = amplifyconfig.storage.bucket_name;
 const region = amplifyconfig.storage.aws_region || 'us-west-2';
@@ -43,48 +42,49 @@ export async function POST(req: NextRequest) {
     // DO NOT create a public videoUrl — private files have no public URL
     // Your Batch job will download using bucket + key directly (via IAM role)
 
-    const task = await prisma.task.create({
-      data: {
-        id: crypto.randomUUID(),
-        type: 'VIDEO_PROCESSING',
-        status: 'PENDING',
-        payload: {
-          userId: user.id,
-          videoKey, // e.g. private/us-west-1:.../videos/xxx.mp4
-          bucket, // ← critical for Batch job
-          fileName,
-          fileSize: fileSize.toString(),
-          mimeType,
-          duration,
-          thumbnailUrl,
-          steps: [
-            'UPLOAD_COMPLETE',
-            'MODERATION',
-            'AUDIO_EXTRACTION',
-            'TRANSCRIPTION',
-            'SUMMARIZATION',
-          ],
-          currentStep: 'UPLOAD_COMPLETE',
-        },
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-    });
+    const taskId = randomUUID();
+    const now = new Date().toISOString();
 
+    const taskResp = await Task.put({
+      taskId,
+      type: 'VIDEO_PROCESSING',
+      status: 'PENDING',
+      payload: {
+        userId: user.id,
+        videoKey,
+        bucket,
+        fileName,
+        fileSize: fileSize.toString(),
+        mimeType,
+        duration,
+        thumbnailUrl,
+        steps: [
+          'UPLOAD_COMPLETE',
+          'MODERATION',
+          'AUDIO_EXTRACTION',
+          'TRANSCRIPTION',
+          'SUMMARIZATION',
+        ],
+        currentStep: 'UPLOAD_COMPLETE',
+      },
+      createdAt: now,
+    }).go();
+
+    const task = taskResp.data;
     let batchJobId: string | undefined;
 
     if (process.env.BATCH_JOB_QUEUE && process.env.BATCH_JOB_DEFINITION) {
       try {
         const command = new SubmitJobCommand({
-          jobName: `video-processing-${task.id}`,
+          jobName: `video-processing-${taskId}`,
           jobQueue: process.env.BATCH_JOB_QUEUE,
           jobDefinition: process.env.BATCH_JOB_DEFINITION,
           containerOverrides: {
             environment: [
               { name: 'VIDEO_KEY', value: videoKey },
               { name: 'BUCKET', value: bucket },
-              { name: 'TASK_ID', value: task.id },
-              { name: 'DATABASE_URL', value: process.env.DATABASE_URL || '' },
+              { name: 'TASK_ID', value: taskId },
+              { name: 'DYNAMODB_TABLE', value: process.env.DYNAMODB_TABLE || '' },
               { name: 'HF_TOKEN', value: process.env.HF_TOKEN || '' },
             ],
           },
@@ -93,17 +93,15 @@ export async function POST(req: NextRequest) {
         const response = await batchClient.send(command);
         batchJobId = response.jobId;
 
-        await prisma.task.update({
-          where: { id: task.id },
-          data: {
+        await Task.patch({ taskId })
+          .set({
             status: 'PROCESSING',
             payload: {
               ...(task.payload as object),
               batchJobId,
             },
-            updatedAt: new Date(),
-          },
-        });
+          })
+          .go();
 
         console.log(`✓ Batch job submitted: ${batchJobId}`);
       } catch (batchError) {
@@ -115,7 +113,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      taskId: task.id,
+      taskId,
       batchJobId,
       message: 'Video processing started successfully!',
     });

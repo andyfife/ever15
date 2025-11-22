@@ -1,5 +1,4 @@
 // app/public-videos/page.tsx
-import { prisma } from '@/lib/db';
 
 export default async function PublicVideosPage() {
   // const videos = await prisma.userMedia.findMany({

@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
-
+import Image from 'next/image';
 type Video = {
   id: string;
   name: string;
@@ -41,7 +41,10 @@ export default function MyVideosPage() {
   };
 
   const getStatusBadge = (status: string) => {
-    const variants: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
+    const variants: Record<
+      string,
+      'default' | 'secondary' | 'destructive' | 'outline'
+    > = {
       PENDING: 'secondary',
       APPROVED: 'outline',
       REJECTED: 'destructive',
@@ -58,7 +61,9 @@ export default function MyVideosPage() {
       PUBLIC: 'outline',
     };
 
-    return <Badge variant={variants[visibility] || 'secondary'}>{visibility}</Badge>;
+    return (
+      <Badge variant={variants[visibility] || 'secondary'}>{visibility}</Badge>
+    );
   };
 
   const formatDuration = (ms?: number) => {
@@ -78,9 +83,35 @@ export default function MyVideosPage() {
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-4 md:p-8">
+      <div className="flex flex-col items-center justify-start bg-zinc-50 font-sans dark:bg-black">
+        {/* Hero Image */}
+        <div className="mt-8 flex justify-center w-full">
+          <div className="relative w-full max-w-5xl aspect-video">
+            <Image
+              src="/images/evergreen4.png"
+              alt="Evergreen Home"
+              fill
+              style={{ objectFit: 'cover' }}
+              className="rounded-lg shadow-lg"
+              priority
+            />
+          </div>
+        </div>
+
+        {/* Text section */}
+        <div className="max-w-4xl mx-auto px-6 mt-12 text-left space-y-10">
+          <h1 className="text-4xl font-bold text-gray-900 dark:text-white text-center">
+            Preserve and share your stories for generations.
+          </h1>
+
+          {/* Step 1 */}
+
+          {/* Step 3 */}
+        </div>
+      </div>
+
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold mb-2">My Videos</h1>
           <p className="text-muted-foreground">
             Manage your uploaded oral history videos
           </p>
@@ -106,17 +137,19 @@ export default function MyVideosPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-blue-600">
-              {videos.filter(v => v.moderationStatus === 'PENDING').length}
+              {videos.filter((v) => v.moderationStatus === 'PENDING').length}
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">With Transcripts</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              With Transcripts
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">
-              {videos.filter(v => v.hasTranscript).length}
+              {videos.filter((v) => v.hasTranscript).length}
             </div>
           </CardContent>
         </Card>
@@ -126,23 +159,23 @@ export default function MyVideosPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {videos.filter(v => v.visibility === 'PUBLIC').length}
+              {videos.filter((v) => v.visibility === 'PUBLIC').length}
             </div>
           </CardContent>
         </Card>
       </div>
 
       {/* Videos List */}
-      {loading && (
-        <div className="text-center py-8">Loading...</div>
-      )}
+      {loading && <div className="text-center py-8">Loading...</div>}
 
       {!loading && videos.length === 0 && (
         <Card>
           <CardContent className="py-16 text-center">
             <div className="text-muted-foreground mb-4">
               <p className="text-lg mb-2">No videos yet</p>
-              <p className="text-sm">Upload your first oral history video to get started!</p>
+              <p className="text-sm">
+                Upload your first oral history video to get started!
+              </p>
             </div>
             <Button onClick={() => router.push('/videos/upload')}>
               Upload Video
@@ -179,7 +212,9 @@ export default function MyVideosPage() {
                 </div>
                 <div className="text-sm text-muted-foreground space-y-1 mb-3">
                   <p>Duration: {formatDuration(video.duration)}</p>
-                  <p>Uploaded: {new Date(video.createdAt).toLocaleDateString()}</p>
+                  <p>
+                    Uploaded: {new Date(video.createdAt).toLocaleDateString()}
+                  </p>
                 </div>
                 <div className="flex gap-2">
                   <Button

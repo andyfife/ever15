@@ -2,24 +2,14 @@
 'use client';
 
 import * as React from 'react';
-import {
-  Info,
-  Mail,
-  Mic,
-  Users,
-  Shield,
-  Heart,
-  Bell,
-  UserPlus,
-  Video,
-} from 'lucide-react';
+import { Mail, Mic, Users, Shield, Heart } from 'lucide-react';
 import {
   Sidebar,
   SidebarContent,
   SidebarHeader,
 } from '@/components/ui/sidebar';
 import { NavMain } from '@/components/nav-main';
-import { NavProjects } from '@/components/nav-projects';
+import { NavProjects } from './nav-projects';
 
 type AppSidebarProps = React.ComponentProps<typeof Sidebar> & {
   isAdmin: boolean;
@@ -33,35 +23,13 @@ const baseNavMain = [
     url: '#',
     icon: Users,
     items: [
-      {
-        title: 'Our Vision and Mission',
-        url: '/about-us/our-vision-and-mission',
-      },
-      { title: 'Our Founders', url: '/about-us/our-founders' },
-      { title: 'Our Legacy', url: '/about-us/our-legacy' },
-      { title: 'Our Team', url: '/about-us/our-team' },
-      { title: 'Our Emeriti', url: '/about-us/our-emeriti' },
+      { title: 'About Us', url: '/who-we-are/about-us' },
+      { title: 'Our Mission', url: '/who-we-are/our-mission' },
+      { title: 'Our Story', url: '/who-we-are/our-story' },
+      { title: 'Our Team', url: '/who-we-are/our-team' },
     ],
   },
-  {
-    title: 'What We Do',
-    url: '#',
-    icon: Info,
-    items: [
-      { title: 'Our Work Overview', url: '/our-work' },
-      { title: 'Family Story', url: '/our-work/family-story' },
-      { title: 'Household Library', url: '/our-work/household-library' },
-      { title: 'Early Childhood', url: '/our-work/early-childhood' },
-      {
-        title: 'Conferences and Workshops',
-        url: '/our-work/conferences-and-workshops',
-      },
-      {
-        title: 'Publications and Presentations',
-        url: '/our-work/publications-and-presentations',
-      },
-    ],
-  },
+
   {
     title: 'Oral History',
     url: '#',
@@ -69,7 +37,7 @@ const baseNavMain = [
     items: [
       { title: 'How it Works', url: '/oral-history/how-it-works' },
       { title: 'Get Started', url: '/oral-history/get-started' },
-      { title: 'Archived Stories', url: '/oral-history/archived-stories' },
+      { title: 'Archived Stories', url: '/archived-stories' },
     ],
   },
 ] as const;
@@ -81,7 +49,7 @@ const projects = [
     url: 'https://www.globalgiving.org/donate/33117/evergreen-education-foundation/',
     icon: Heart,
   },
-] as const;
+];
 
 function AppSidebarInner({
   isAdmin,
@@ -89,6 +57,7 @@ function AppSidebarInner({
   unreadCount,
   ...props
 }: AppSidebarProps) {
+  console.log('is signed in', isSignedIn);
   // Keep references stable so children don't re-render needlessly.
   const navMain = React.useMemo(() => {
     const userItems = isSignedIn
@@ -111,6 +80,7 @@ function AppSidebarInner({
               { title: 'Friends', url: '/user/friends' },
               { title: 'My Videos', url: '/user/videos' },
               { title: 'Upload Videos', url: '/videos/upload' },
+              { title: 'Upload Photos', url: '/user/photos/upload' },
             ],
           },
         ]
@@ -139,7 +109,7 @@ function AppSidebarInner({
       <SidebarHeader />
       <SidebarContent>
         <NavMain items={navMain as any} />
-        <NavProjects projects={projects as any} />
+        <NavProjects projects={projects} /> {/* ✅ pass the correct array */}
       </SidebarContent>
 
       {/* 🔒 Memoized island — won’t re-render unless isSignedIn changes */}

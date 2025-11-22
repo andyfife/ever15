@@ -1,48 +1,11 @@
+// app/api/notifications/route.ts
 import { NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth-server';
-import { prisma } from '@/lib/db';
-
-export async function GET() {
-  try {
-    const user = await getCurrentUser();
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const notifications = await prisma.notification.findMany({
-      where: {
-        userId: user.id,
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
-
-    // Transform to match frontend expectations
-    const transformedNotifications = notifications.map((notification) => ({
-      id: notification.id,
-      type: notification.type,
-      message: notification.message,
-      isRead: notification.read,
-      createdAt: notification.createdAt.toISOString(),
-      relatedId: notification.userMediaId || undefined,
-    }));
-
-    return NextResponse.json({ notifications: transformedNotifications });
-  } catch (error) {
-    console.error('Error fetching notifications:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch notifications' },
-      { status: 500 }
-    );
-  }
-}
+import { Notification } from '@/lib/db';
 
 export async function PATCH(request: Request) {
   try {
     const user = await getCurrentUser();
-
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -50,58 +13,64 @@ export async function PATCH(request: Request) {
     const body = await request.json();
     const { notificationId, markAllAsRead } = body;
 
+    // MARK ALL AS READ
     if (markAllAsRead) {
-      // Mark all user's notifications as read
-      await prisma.notification.updateMany({
-        where: {
-          userId: user.id,
-          read: false,
-        },
-        data: {
-          read: true,
-          updatedAt: new Date(),
-        },
-      });
+      // Fetch all unread notifications for the user
+      const unreadResp = await Notification.query
+        .byUserUnread({ userId: user.id, read: false })
+        .go();
+
+      // Update each unread notification
+      await Promise.all(
+        unreadResp.data.map((n) =>
+          Notification.update({
+            userId: n.userId,
+            createdAt: n.createdAt,
+            notificationId: n.notificationId,
+          })
+            .set({ read: true, updatedAt: new Date().toISOString() })
+            .go()
+        )
+      );
 
       return NextResponse.json({ success: true });
     }
 
+    // MARK SINGLE NOTIFICATION AS READ
     if (notificationId) {
-      // Mark single notification as read
-      const notification = await prisma.notification.findUnique({
-        where: { id: notificationId },
-      });
+      // Fetch notification
+      const notifResp = await Notification.query
+        .byUser({ userId: user.id })
+        .go();
 
-      if (!notification) {
+      const notif = notifResp.data.find(
+        (n) => n.notificationId === notificationId
+      );
+
+      if (!notif) {
         return NextResponse.json(
           { error: 'Notification not found' },
           { status: 404 }
         );
       }
 
-      if (notification.userId !== user.id) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-      }
-
-      await prisma.notification.update({
-        where: { id: notificationId },
-        data: {
-          read: true,
-          updatedAt: new Date(),
-        },
-      });
+      // Update notification
+      await Notification.update({
+        userId: notif.userId,
+        createdAt: notif.createdAt,
+        notificationId: notif.notificationId,
+      })
+        .set({ read: true, updatedAt: new Date().toISOString() })
+        .go();
 
       return NextResponse.json({ success: true });
     }
 
+    return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+  } catch (err) {
+    console.error('Error updating notifications:', err);
     return NextResponse.json(
-      { error: 'Invalid request' },
-      { status: 400 }
-    );
-  } catch (error) {
-    console.error('Error updating notification:', error);
-    return NextResponse.json(
-      { error: 'Failed to update notification' },
+      { error: 'Failed to update notifications' },
       { status: 500 }
     );
   }

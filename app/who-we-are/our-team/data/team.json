@@ -1,0 +1,58 @@
+[
+  {
+    "id": "faith-chao",
+    "name": "Faith Chao",
+    "role": "The Instigator",
+    "bio": "Conceived the idea and the overall concept of this project.",
+    "image": "faith-chao.webp"
+  },
+  {
+    "id": "winnie-wong",
+    "name": "Winnie Wong",
+    "role": "President of EEF",
+    "bio": "Our leader and President of EEF.",
+    "image": "winnie-wong.jpeg"
+  },
+  {
+    "id": "jerry-xu",
+    "name": "Jerry Xu",
+    "role": "Head of Technical Team",
+    "bio": "Lead of our technical team.",
+    "image": "jerry-xu.webp"
+  },
+  {
+    "id": "donna-yeung",
+    "name": "Donna Yeung",
+    "role": "Technical Team Member",
+    "bio": "Member of the technical team.",
+    "image": "donna-yeung.webp"
+  },
+  {
+    "id": "nancy-mackay",
+    "name": "Nancy Mackay",
+    "role": "Oral History Guru",
+    "bio": "Our expert content consultant.",
+    "image": "nancy-mackay.webp"
+  },
+  {
+    "id": "chang-chen",
+    "name": "Chang Chen",
+    "role": "Legal Consultant",
+    "bio": "Our legal consultant.",
+    "image": "chang-chen(2).png"
+  },
+  {
+    "id": "victor-xu",
+    "name": "Victor Xu",
+    "role": "Technical Team Member",
+    "bio": "Member of the technical team.",
+    "image": "victor-xu(1).png"
+  },
+  {
+    "id": "tommy-rodda",
+    "name": "Tommy Rodda",
+    "role": "Technical Team Member",
+    "bio": "Member of the technical team.",
+    "image": ""
+  }
+]

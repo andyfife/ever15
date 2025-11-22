@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
 import { getCurrentUser } from '@/lib/auth-server';
+import { Task, Media, Transcript, User } from '@/lib/db';
 import { BatchClient, DescribeJobsCommand } from '@aws-sdk/client-batch';
-
-const prisma = new PrismaClient();
 
 // Initialize AWS Batch client
 const batchClient = new BatchClient({
@@ -25,47 +23,68 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get all video processing tasks with UserMedia
-    const tasks = await prisma.task.findMany({
-      where: {
-        type: 'VIDEO_PROCESSING',
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-      take: 50, // Limit to recent 50
-    });
+    // Get all video processing tasks
+    const tasksResp = await Task.query
+      .byType({ type: 'VIDEO_PROCESSING' })
+      .go();
 
-    // Get all UserMedia IDs from tasks
-    const userMediaIds = tasks
+    // Sort by createdAt descending and take 50
+    const tasks = tasksResp.data
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      )
+      .slice(0, 50);
+
+    // Get all mediaIds from tasks
+    const mediaIds = tasks
       .map((task) => {
         const payload = task.payload as Record<string, unknown>;
-        return payload.userMediaId as string;
+        return payload.mediaId as string;
       })
       .filter(Boolean);
 
-    // Fetch UserMedia records
-    const userMediaRecords = await prisma.userMedia.findMany({
-      where: {
-        id: { in: userMediaIds },
-      },
-      include: {
-        User: {
-          select: {
-            id: true,
-            name: true,
-            email_address: true,
-          },
-        },
-        UserMediaTranscript: {
-          where: { isCurrent: true },
-          take: 1,
-        },
-      },
-    });
+    // Fetch Media records
+    const mediaPromises = mediaIds.map((mediaId) =>
+      Media.query.byMediaId({ mediaId }).go()
+    );
+    const mediaResults = await Promise.all(mediaPromises);
 
-    // Create a map for quick lookup
-    const userMediaMap = new Map(userMediaRecords.map((um) => [um.id, um]));
+    // Flatten and create a map
+    const mediaRecords = mediaResults
+      .map((r) => r.data?.[0])
+      .filter(Boolean) as any[];
+    const mediaMap = new Map(
+      mediaRecords.map((m) => [m.mediaId, m])
+    );
+
+    // Get user IDs from media records
+    const userIds = [...new Set(mediaRecords.map((m) => m.userId))];
+
+    // Fetch users
+    const userPromises = userIds.map((userId) =>
+      User.get({ cognitoSub: userId }).go()
+    );
+    const userResults = await Promise.all(userPromises);
+    const userMap = new Map(
+      userResults
+        .filter((r) => r.data)
+        .map((r) => [r.data!.cognitoSub, r.data])
+    );
+
+    // Fetch transcripts for all media
+    const transcriptPromises = mediaIds.map((mediaId) =>
+      Transcript.query
+        .byMedia({ mediaId })
+        .where(({ isCurrent }, { eq }) => eq(isCurrent, true))
+        .go()
+    );
+    const transcriptResults = await Promise.all(transcriptPromises);
+    const transcriptMap = new Map(
+      transcriptResults
+        .filter((r) => r.data?.[0])
+        .map((r) => [r.data![0].mediaId, r.data![0]])
+    );
 
     // Get AWS Batch job statuses
     const batchJobIds = tasks
@@ -106,36 +125,46 @@ export async function GET(req: NextRequest) {
     // Combine data
     const videos = tasks.map((task) => {
       const payload = task.payload as Record<string, unknown>;
-      const userMediaId = payload.userMediaId as string;
+      const mediaId = payload.mediaId as string;
       const batchJobId = payload.batchJobId as string | undefined;
-      const userMedia = userMediaMap.get(userMediaId);
+      const media = mediaMap.get(mediaId);
       const batchStatus = batchJobId ? batchJobStatuses.get(batchJobId) : null;
 
+      const mediaUser = media ? userMap.get(media.userId) : null;
+      const transcript = media ? transcriptMap.get(media.mediaId) : null;
+
       return {
-        taskId: task.id,
+        taskId: task.taskId,
         taskStatus: task.status,
         taskCreatedAt: task.createdAt,
-        taskUpdatedAt: task.updatedAt,
         errorMessage: task.errorMessage,
         currentStep: payload.currentStep,
         steps: payload.steps,
         batchJobId: batchJobId,
         batchStatus: batchStatus,
-        video: userMedia
+        video: media
           ? {
-              id: userMedia.id,
-              name: userMedia.name,
-              url: userMedia.url,
-              thumbnailUrl: userMedia.thumbnailUrl,
-              duration: userMedia.duration,
-              moderationStatus: userMedia.moderationStatus,
-              moderationNotes: userMedia.moderationNotes,
-              visibility: userMedia.visibility,
-              approvalStatus: userMedia.approvalStatus,
-              fileSize: userMedia.fileSize?.toString(),
-              mimeType: userMedia.mimeType,
-              user: userMedia.User,
-              hasTranscript: userMedia.UserMediaTranscript.length > 0,
+              id: media.mediaId,
+              name: media.name,
+              url: media.url,
+              thumbnailUrl: media.thumbnailUrl,
+              duration: media.duration,
+              moderationStatus: media.moderationStatus,
+              visibility: media.visibility,
+              approvalStatus: media.approvalStatus,
+              fileSize: media.fileSize?.toString(),
+              mimeType: media.mimeType,
+              user: mediaUser
+                ? {
+                    id: mediaUser.cognitoSub,
+                    name:
+                      [mediaUser.firstName, mediaUser.lastName]
+                        .filter(Boolean)
+                        .join(' ') || null,
+                    email_address: mediaUser.email,
+                  }
+                : null,
+              hasTranscript: !!transcript,
             }
           : null,
       };
