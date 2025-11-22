@@ -6,8 +6,7 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
-    "postinstall": "echo 'Dependencies installed'"
+    "lint": "eslint"
   },
   "dependencies": {
     "@aws-amplify/adapter-nextjs": "^1.6.11",
