@@ -32,27 +32,7 @@ export default function VideoUpload() {
   // dialog + metadata
   const [metaDialogOpen, setMetaDialogOpen] = useState(false);
   const [videoMeta, setVideoMeta] = useState<VideoMeta | null>(null);
-  const [friends, setFriends] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-
-  // fetch friends (placeholder) - replace with your real endpoint / store
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const res = await fetch('/api/user-and-friends'); // implement this
-        if (!res.ok) throw new Error('Failed to load friends');
-        const data = await res.json();
-        if (mounted) setFriends(Array.isArray(data) ? data : []);
-      } catch (e) {
-        // silently ignore; we'll let datalist be empty
-        console.warn('Could not load friends list', e);
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   const handleOpenMetaAndSelect = () => {
     // open metadata dialog first
@@ -268,10 +248,9 @@ export default function VideoUpload() {
             name: '',
             description: '',
             visibility: 'PRIVATE',
-            speakers: [''],
+            speakers: [{ name: '' }],
           }}
           onSubmit={onMetaSubmit}
-          friends={friends}
         />
 
         {videoPreview && (

@@ -30,9 +30,10 @@ export async function GET(req: NextRequest) {
 
     // Sort by createdAt descending and take 50
     const tasks = tasksResp.data
+      .filter((task) => task.createdAt)
       .sort(
         (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime()
       )
       .slice(0, 50);
 

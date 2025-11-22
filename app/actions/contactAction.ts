@@ -8,7 +8,7 @@ import { randomUUID } from 'crypto';
 
 const ContactFormSchema = z.object({
   name: z.string().min(1, 'Name is required'),
-  email: z.email('Invalid email format'),
+  email: z.string().email('Invalid email format'),
   comment: z.string().min(1, 'Comment is required'),
   userId: z.string().optional(),
 });

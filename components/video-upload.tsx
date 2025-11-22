@@ -207,10 +207,9 @@ export function VideoUpload() {
           name: videoMeta?.name || '',
           description: videoMeta?.description || '',
           visibility: videoMeta?.visibility || 'PRIVATE',
-          speakers: videoMeta?.speakers || [''],
+          speakers: videoMeta?.speakers || [{ name: '' }],
         }}
         onSubmit={handleMetaSubmit}
-        friends={friends}
       />
     </Card>
   );
