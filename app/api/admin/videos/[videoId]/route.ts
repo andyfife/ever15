@@ -5,7 +5,7 @@ import { Media } from '@/lib/db';
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { videoId: string } }
+  { params }: { params: Promise<{ videoId: string }> }
 ) {
   try {
     const currentUser = await getCurrentUser();
@@ -13,7 +13,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { videoId } = params;
+    const { videoId } = await params;
     const body = await request.json();
 
     const { moderationStatus, moderationNotes, approvalStatus, visibility } =
