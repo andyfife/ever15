@@ -300,7 +300,7 @@ allocationStrategy=SPOT_CAPACITY_OPTIMIZED,\
 minvCpus=0,\
 maxvCpus=256,\
 desiredvCpus=0,\
-instanceTypes=g4dn.xlarge,\
+instanceTypes=g4dn.2xlarge,g4dn.4xlarge,g5.2xlarge,g5.4xlarge,\
 subnets=$SUBNETS,\
 securityGroupIds=$SG_ID,\
 instanceRole=$INSTANCE_PROFILE_ARN \
@@ -367,8 +367,8 @@ cat > /tmp/aws-batch-setup/job-def.json << EOF
   "platformCapabilities": ["EC2"],
   "containerProperties": {
     "image": "$ECR_IMAGE",
-    "vcpus": 4,
-    "memory": 16384,
+    "vcpus": 8,
+    "memory": 32768,
     "jobRoleArn": "$JOB_ROLE_ARN",
     "executionRoleArn": "$EXECUTION_ROLE_ARN",
     "resourceRequirements": [{"type": "GPU", "value": "1"}],
