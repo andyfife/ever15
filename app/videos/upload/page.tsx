@@ -18,11 +18,7 @@ import { toast } from 'sonner';
 import VideoMetaDialog, { VideoMeta } from '@/components/VideoMetaDialog';
 import { format } from 'date-fns';
 
-interface VideoUploadProps {
-  onUploadComplete?: (taskId: string, userMediaId: string) => void;
-}
-
-export default function VideoUpload({ onUploadComplete }: VideoUploadProps) {
+export default function VideoUpload() {
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [videoPreview, setVideoPreview] = useState<string>('');
@@ -208,14 +204,6 @@ export default function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       );
 
       setSuccess('Video uploaded successfully — processing started.');
-
-      if (onUploadComplete) {
-        try {
-          onUploadComplete('', result.path || '');
-        } catch (err) {
-          console.warn('onUploadComplete error', err);
-        }
-      }
 
       setTimeout(() => {
         try {
