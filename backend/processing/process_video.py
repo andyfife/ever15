@@ -32,91 +32,89 @@ logger = logging.getLogger(__name__)
 
 # AWS clients
 s3 = boto3.client('s3')
+dynamodb = boto3.resource('dynamodb', region_name=os.environ.get('AWS_REGION', 'us-west-2'))
 
-# Database connection (using psycopg2 for PostgreSQL)
-import psycopg2
-from psycopg2.extras import Json
-
-def get_db_connection():
-    """Create PostgreSQL connection"""
-    return psycopg2.connect(os.environ['DATABASE_URL'])
+# Get DynamoDB table name from environment
+TABLE_NAME = os.environ.get('DYNAMODB_TABLE', 'ever15-prod')
+table = dynamodb.Table(TABLE_NAME)
 
 
 def update_task_status(task_id: str, status: str, current_step: str, error_message: str = None):
-    """Update task status in database"""
+    """Update task status in DynamoDB"""
     try:
-        conn = get_db_connection()
-        cur = conn.cursor()
+        # Get current task item
+        response = table.get_item(Key={'pk': f'task#{task_id}', 'sk': f'task#{task_id}'})
 
-        # Get current payload
-        cur.execute('SELECT payload FROM "Task" WHERE id = %s', (task_id,))
-        result = cur.fetchone()
-        if not result:
+        if 'Item' not in response:
             logger.error(f"Task {task_id} not found")
             return
 
-        payload = result[0]
+        item = response['Item']
+        payload = item.get('payload', {})
         payload['currentStep'] = current_step
 
-        # Update task
-        if error_message:
-            cur.execute(
-                'UPDATE "Task" SET status = %s, payload = %s, "errorMessage" = %s, "updatedAt" = NOW() WHERE id = %s',
-                (status, Json(payload), error_message, task_id)
-            )
-        else:
-            cur.execute(
-                'UPDATE "Task" SET status = %s, payload = %s, "updatedAt" = NOW() WHERE id = %s',
-                (status, Json(payload), task_id)
-            )
+        # Update expression
+        update_expr = 'SET #status = :status, payload = :payload'
+        expr_values = {':status': status, ':payload': payload}
 
-        conn.commit()
-        cur.close()
-        conn.close()
+        if error_message:
+            update_expr += ', errorMessage = :error'
+            expr_values[':error'] = error_message
+
+        table.update_item(
+            Key={'pk': f'task#{task_id}', 'sk': f'task#{task_id}'},
+            UpdateExpression=update_expr,
+            ExpressionAttributeNames={'#status': 'status'},
+            ExpressionAttributeValues=expr_values
+        )
+
         logger.info(f"Updated task {task_id}: {status} - {current_step}")
     except Exception as e:
         logger.error(f"Failed to update task status: {e}")
 
 
 def create_user_media(task_payload: Dict) -> str:
-    """Create UserMedia record from task payload after successful processing"""
+    """Create Media record in DynamoDB after successful processing"""
     try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-
         import uuid
-        user_media_id = str(uuid.uuid4())
+        from datetime import datetime
 
-        cur.execute('''
-            INSERT INTO "UserMedia"
-            (id, "userId", url, "thumbnailUrl", name, type, visibility, "moderationStatus",
-             "approvalStatus", "originalFilename", "fileSize", "mimeType", duration,
-             "createdAt", "updatedAt")
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
-        ''', (
-            user_media_id,
-            task_payload['userId'],
-            task_payload['videoUrl'],
-            task_payload.get('thumbnailUrl'),
-            task_payload['fileName'],
-            'USER_VIDEO',
-            'PRIVATE',  # Default to private
-            'APPROVED',  # Already passed moderation
-            'DRAFT',
-            task_payload['fileName'],
-            int(task_payload['fileSize']) if task_payload.get('fileSize') else None,
-            task_payload.get('mimeType'),
-            task_payload.get('duration')
-        ))
+        media_id = str(uuid.uuid4())
+        user_id = task_payload['userId']
+        created_at = datetime.utcnow().isoformat()
 
-        conn.commit()
-        cur.close()
-        conn.close()
-        logger.info(f"✓ Created UserMedia: {user_media_id}")
-        return user_media_id
+        # Create media item following ElectroDb pattern
+        item = {
+            'pk': f'user#{user_id}',
+            'sk': f'{created_at}#media#{media_id}',
+            'gsi1pk': 'VIDEO',  # type index
+            'gsi1sk': created_at,
+            'gsi2pk': 'DRAFT',  # approval status index
+            'gsi3pk': f'media#{media_id}',  # media ID index
+            '__edb_e__': 'media',
+            '__edb_v__': '1',
+            'userId': user_id,
+            'mediaId': media_id,
+            'type': 'VIDEO',
+            'name': task_payload.get('fileName', 'Untitled'),
+            'visibility': 'PRIVATE',
+            'url': task_payload['videoUrl'],
+            'thumbnailUrl': task_payload.get('thumbnailUrl'),
+            'fileSize': int(task_payload['fileSize']) if task_payload.get('fileSize') else None,
+            'mimeType': task_payload.get('mimeType'),
+            'duration': task_payload.get('duration'),
+            'approvalStatus': 'DRAFT',
+            'moderationStatus': 'APPROVED',
+            'createdAt': created_at,
+            'processedAt': created_at,
+        }
+
+        table.put_item(Item=item)
+        logger.info(f"✓ Created Media: {media_id}")
+        return media_id
 
     except Exception as e:
-        logger.error(f"Failed to create UserMedia: {e}")
+        logger.error(f"Failed to create Media: {e}")
         raise
 
 
@@ -398,13 +396,13 @@ Keywords: """
         return "Summary generation failed", []
 
 
-def save_transcript_to_db(user_media_id: str, transcript_result: Dict, summary: str, keywords: List[str]):
-    """Save transcript to UserMediaTranscript table"""
+def save_transcript_to_db(media_id: str, transcript_result: Dict, summary: str, keywords: List[str]):
+    """Save transcript to DynamoDB"""
     logger.info("Saving transcript to database...")
 
     try:
-        conn = get_db_connection()
-        cur = conn.cursor()
+        import uuid
+        from datetime import datetime
 
         # Extract full text from segments
         segments = transcript_result.get('segments', [])
@@ -421,28 +419,32 @@ def save_transcript_to_db(user_media_id: str, transcript_result: Dict, summary: 
             speaker_mappings[speaker] = f"Speaker {speaker}"
 
         # Create transcript record
-        transcript_id = __import__('uuid').uuid4().hex
+        transcript_id = str(uuid.uuid4())
+        created_at = datetime.utcnow().isoformat()
 
-        cur.execute('''
-            INSERT INTO "UserMediaTranscript"
-            (id, "userMediaId", text, status, "isCurrent", summary, keywords, "speakerMappings", "rawSegments", "createdAt", "updatedAt")
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
-        ''', (
-            transcript_id,
-            user_media_id,
-            full_text,
-            'COMPLETED',
-            True,
-            summary,
-            Json(keywords),
-            Json(speaker_mappings),
-            Json(segments)
-        ))
+        # Create transcript item following ElectroDb pattern
+        item = {
+            'pk': f'media#{media_id}',
+            'sk': f'{created_at}#transcript#{transcript_id}',
+            'gsi1pk': f'media#{media_id}',
+            'gsi1sk': f'1#{created_at}',  # isCurrent=true, createdAt
+            '__edb_e__': 'transcript',
+            '__edb_v__': '1',
+            'mediaId': media_id,
+            'transcriptId': transcript_id,
+            'text': full_text,
+            'status': 'COMPLETED',
+            'isCurrent': True,
+            'summary': summary,
+            'keywords': keywords,
+            'speakerMappings': speaker_mappings,
+            'rawSegments': segments,
+            'provider': 'WHISPER',
+            'createdAt': created_at,
+            'updatedAt': created_at,
+        }
 
-        conn.commit()
-        cur.close()
-        conn.close()
-
+        table.put_item(Item=item)
         logger.info(f"✓ Transcript saved: {transcript_id}")
         return transcript_id
 
@@ -452,19 +454,14 @@ def save_transcript_to_db(user_media_id: str, transcript_result: Dict, summary: 
 
 
 def get_task_payload(task_id: str) -> Dict:
-    """Get task payload from database"""
+    """Get task payload from DynamoDB"""
     try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute('SELECT payload FROM "Task" WHERE id = %s', (task_id,))
-        result = cur.fetchone()
-        cur.close()
-        conn.close()
+        response = table.get_item(Key={'pk': f'task#{task_id}', 'sk': f'task#{task_id}'})
 
-        if not result:
+        if 'Item' not in response:
             raise Exception(f"Task {task_id} not found")
 
-        return result[0]
+        return response['Item'].get('payload', {})
     except Exception as e:
         logger.error(f"Failed to get task payload: {e}")
         raise
@@ -511,12 +508,12 @@ def process_video(task_id: str) -> Dict[str, Any]:
 
     logger.info(f"✓ Moderation passed: {moderation_message}")
 
-    # Create UserMedia record after passing moderation
-    logger.info("Creating UserMedia record...")
-    user_media_id = create_user_media(task_payload)
+    # Create Media record after passing moderation
+    logger.info("Creating Media record...")
+    media_id = create_user_media(task_payload)
 
-    # Update task payload with userMediaId
-    task_payload['userMediaId'] = user_media_id
+    # Update task payload with mediaId
+    task_payload['mediaId'] = media_id
     update_task_status(task_id, 'PROCESSING', 'MODERATION')
 
     # Step 2: Extract Audio
@@ -534,7 +531,7 @@ def process_video(task_id: str) -> Dict[str, Any]:
 
     # Step 5: Save Results to Database
     logger.info("Saving results to database...")
-    transcript_id = save_transcript_to_db(user_media_id, transcript_result, summary, keywords)
+    transcript_id = save_transcript_to_db(media_id, transcript_result, summary, keywords)
 
     # Cleanup
     logger.info("Cleaning up temporary files...")
@@ -551,7 +548,7 @@ def process_video(task_id: str) -> Dict[str, Any]:
     return {
         "status": "success",
         "transcript_id": transcript_id,
-        "user_media_id": user_media_id,
+        "media_id": media_id,
         "summary_length": len(summary),
         "keywords_count": len(keywords)
     }

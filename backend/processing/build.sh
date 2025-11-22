@@ -25,7 +25,7 @@ if [ -z "$HF_TOKEN" ]; then
 fi
 
 # Set AWS region
-AWS_REGION=${AWS_REGION:-us-west-1}
+AWS_REGION=${AWS_REGION:-us-west-2}
 echo -e "${YELLOW}Using AWS region: $AWS_REGION${NC}"
 
 # Get AWS account ID

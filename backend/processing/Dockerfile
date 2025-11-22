@@ -41,10 +41,9 @@ RUN pip3 install --no-cache-dir \
     opencv-python-headless==4.8.1.78 \
     pillow==10.1.0
 
-# Install AWS SDK and database drivers
+# Install AWS SDK (includes DynamoDB support)
 RUN pip3 install --no-cache-dir \
-    boto3==1.34.10 \
-    psycopg2-binary==2.9.9
+    boto3==1.34.10
 
 # Set Hugging Face cache directory (persistent location in image)
 ENV HF_HOME=/models/huggingface
