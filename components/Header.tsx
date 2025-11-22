@@ -55,7 +55,7 @@ export function Header() {
         </div>
 
         <Link href="/" className="flex items-center gap-3">
-          <span className="hidden md:block text-2xl font-bold text-green-700">
+          <span className="text-2xl font-bold text-green-700">
             Family Stories
           </span>
         </Link>
@@ -78,7 +78,7 @@ export function Header() {
         </div>
       </div>
 
-      <div className="py-3 bg-gray-50 border-t">
+      <div className="hidden md:block py-3 bg-gray-50 border-t">
         <div className="flex justify-center">
           <NavigationMenuDemo user={user} />
         </div>

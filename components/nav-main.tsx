@@ -19,6 +19,7 @@ import {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
+  useSidebar,
 } from '@/components/ui/sidebar';
 
 export function NavMain({
@@ -37,6 +38,7 @@ export function NavMain({
   }[];
 }) {
   const pathname = usePathname();
+  const { setOpenMobile } = useSidebar();
 
   // Calculate which items should be open based on current path
   const getOpenItems = React.useCallback(() => {
@@ -91,7 +93,7 @@ export function NavMain({
                         asChild
                         isActive={pathname === subItem.url}
                       >
-                        <Link href={subItem.url}>
+                        <Link href={subItem.url} onClick={() => setOpenMobile(false)}>
                           <span>{subItem.title}</span>
                           {subItem.badge && (
                             <span className="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground">
