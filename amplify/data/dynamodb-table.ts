@@ -3,7 +3,8 @@ import { RemovalPolicy } from 'aws-cdk-lib';
 
 export function createDynamoDBTable(stack: any) {
   const table = new dynamodb.Table(stack, 'Ever15Table', {
-    tableName: 'ever15-prod',
+    // Let CloudFormation generate a unique name to avoid conflicts
+    // tableName will be available via table.tableName
     partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
     sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
     billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
