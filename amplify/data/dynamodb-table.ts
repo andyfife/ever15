@@ -1,4 +1,3 @@
-import { defineFunction } from '@aws-amplify/backend';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import { RemovalPolicy } from 'aws-cdk-lib';
 
@@ -9,7 +8,9 @@ export function createDynamoDBTable(stack: any) {
     sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
     billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
     removalPolicy: RemovalPolicy.RETAIN, // Keep data if stack is deleted
-    pointInTimeRecovery: true, // Enable backups
+    pointInTimeRecoverySpecification: {
+      pointInTimeRecoveryEnabled: true,
+    },
   });
 
   // GSI1 - Used by: User.byEmail, Media.byMediaId, Friendship.byFriend, etc.
